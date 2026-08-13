@@ -1,695 +1,3 @@
-// const express = require("express");
-// const router = express.Router();
-// const sql = require("mssql");
-// const { getPool } = require("../db");
-
-// // ======================================================
-// // GET USER TYPES
-// // GET /api/usertypes
-// // ======================================================
-// router.get("/usertypes", async (req, res) => {
-//   try {
-//     const pool = await getPool();
-
-//     const result = await pool.request().query(`
-//       SELECT
-//         UserTypeCode,
-//         UserTypeName
-//       FROM tbl_UserType
-//       ORDER BY UserTypeCode
-//     `);
-
-//     console.log("User Types:", result.recordset);
-
-//     return res.json(result.recordset);
-//   } catch (err) {
-//     console.error("GET /usertypes ERROR:", err);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to load user types.",
-//       error: err.message,
-//     });
-//   }
-// });
-
-// // ======================================================
-// // GET COMPANY
-// // GET /api/Company
-// // ======================================================
-// router.get("/Company", async (req, res) => {
-//   try {
-//     const pool = await getPool();
-
-//     const result = await pool.request().query(`
-//       SELECT
-//         CompanyCode,
-//         EDNO,
-//         RTRIM(ISNULL(Header1, '')) +
-//         RTRIM(ISNULL(Header2, '')) AS CompanyName,
-//         MobileNo
-//       FROM tbl_Company
-//       WHERE LEN(
-//         RTRIM(ISNULL(Header1, '')) +
-//         RTRIM(ISNULL(Header2, ''))
-//       ) > 10
-//         AND LEN(RTRIM(ISNULL(MobileNo, ''))) = 10
-//         AND EDNO > 0
-//       ORDER BY EDNO
-//     `);
-
-//     console.log("Companies:", result.recordset.length);
-
-//     return res.json(result.recordset);
-//   } catch (err) {
-//     console.error("GET /Company ERROR:", err);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to load companies.",
-//       error: err.message,
-//     });
-//   }
-// });
-
-// // ======================================================
-// // LOGIN
-// // POST /api/login
-// // ======================================================
-// router.post("/login", async (req, res) => {
-//   try {
-//     const {
-//       userTypeId,
-//       userName,
-//       password,
-//     } = req.body;
-
-//     // ==================================================
-//     // VALIDATION
-//     // ==================================================
-//     if (!userTypeId || !userName || !password) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "User type, username and password are required.",
-//       });
-//     }
-
-//     const pool = await getPool();
-
-//     // ==================================================
-//     // GET USER
-//     // ==================================================
-//     const result = await pool
-//       .request()
-//       .input(
-//         "UserTypeCode",
-//         sql.Int,
-//         Number(userTypeId)
-//       )
-//       .input(
-//         "UserName",
-//         sql.VarChar,
-//         String(userName).trim()
-//       )
-//       .query(`
-//         SELECT
-//           u.UserCode,
-//           u.UserName,
-//           u.Password,
-//           u.UserTypeCode,
-//           u.CompanyCode,
-//           u.MemberNumber,
-
-//           t.UserTypeName,
-
-//           RTRIM(
-//             ISNULL(c.Header1, '') +
-//             ISNULL(c.Header2, '')
-//           ) AS CompanyName
-
-//         FROM tbl_User u
-
-//         INNER JOIN tbl_UserType t
-//           ON u.UserTypeCode = t.UserTypeCode
-
-//         LEFT JOIN tbl_Company c
-//           ON u.CompanyCode = c.CompanyCode
-
-//         WHERE
-//           u.UserName = @UserName
-//           AND u.UserTypeCode = @UserTypeCode
-//       `);
-
-//     // ==================================================
-//     // USER NOT FOUND
-//     // ==================================================
-//     if (result.recordset.length === 0) {
-//       return res.status(401).json({
-//         success: false,
-//         message:
-//           "Invalid username, password, or user type.",
-//       });
-//     }
-
-//     const row = result.recordset[0];
-
-//     // ==================================================
-//     // PASSWORD CHECK
-//     // ==================================================
-//     if (String(row.Password) !== String(password)) {
-//       return res.status(401).json({
-//         success: false,
-//         message:
-//           "Invalid username, password, or user type.",
-//       });
-//     }
-
-//     // ==================================================
-//     // FULL ACCESS ROLES
-//     // ==================================================
-//     const FULL_ACCESS_ROLES = [
-//       "secretary",
-//       "member",
-//     ];
-
-//     const role = String(
-//       row.UserTypeName || ""
-//     )
-//       .trim()
-//       .toLowerCase();
-
-//     // ==================================================
-//     // LOGIN SUCCESS
-//     // ==================================================
-//     return res.json({
-//       success: true,
-//       message: "Login successful",
-
-//       user: {
-//         userCode: row.UserCode,
-//         userName: row.UserName,
-//         userTypeCode: row.UserTypeCode,
-//         userTypeName: row.UserTypeName,
-//         companyCode: row.CompanyCode,
-
-//         companyName:
-//           FULL_ACCESS_ROLES.includes(role)
-//             ? row.CompanyName
-//             : "",
-
-//         memberNumber: row.MemberNumber,
-//       },
-//     });
-//   } catch (err) {
-//     console.error("POST /login ERROR:", err);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Login failed.",
-//       error: err.message,
-//     });
-//   }
-// });
-
-// // ======================================================
-// // REGISTER USER
-// // POST /api/register
-// //
-// // SECRETARY:
-// //   Check tbl_Company.MobileNo
-// //
-// // MEMBER:
-// //   Check tbl_Member:
-// //      CompanyCode
-// //      MemberNumber
-// //      MobileNo
-// // ======================================================
-// router.post("/register", async (req, res) => {
-//   try {
-//     const {
-//       userTypeId,
-//       CompanyCode,
-//       MemberNumber,
-//       RegisteredMobileNumber,
-//       userName,
-//       password,
-//     } = req.body;
-
-//     // ==================================================
-//     // BASIC VALIDATION
-//     // ==================================================
-//     if (!userTypeId) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "User type is required.",
-//       });
-//     }
-
-//     if (!CompanyCode) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Company is required.",
-//       });
-//     }
-
-//     if (!RegisteredMobileNumber) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Mobile number is required.",
-//       });
-//     }
-
-//     if (!userName) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Username is required.",
-//       });
-//     }
-
-//     if (!password) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Password is required.",
-//       });
-//     }
-
-//     const pool = await getPool();
-
-//     // ==================================================
-//     // CLEAN VALUES
-//     // ==================================================
-//     const companyCode = Number(CompanyCode);
-
-//     const enteredMobile = String(
-//       RegisteredMobileNumber
-//     ).trim();
-
-//     const enteredMemberNumber = String(
-//       MemberNumber || ""
-//     ).trim();
-
-//     const enteredUserName = String(
-//       userName
-//     ).trim();
-
-//     // ==================================================
-//     // VALIDATE MOBILE FORMAT
-//     // ==================================================
-//     if (!/^[0-9]{10}$/.test(enteredMobile)) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Invalid mobile number. Enter a valid 10 digit mobile number.",
-//       });
-//     }
-
-//     // ==================================================
-//     // CHECK USER TYPE
-//     // ==================================================
-//     const userTypeResult = await pool
-//       .request()
-//       .input(
-//         "UserTypeCode",
-//         sql.Int,
-//         Number(userTypeId)
-//       )
-//       .query(`
-//         SELECT
-//           UserTypeCode,
-//           UserTypeName
-//         FROM tbl_UserType
-//         WHERE UserTypeCode = @UserTypeCode
-//       `);
-
-//     if (userTypeResult.recordset.length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid user type.",
-//       });
-//     }
-
-//     const userTypeName = String(
-//       userTypeResult.recordset[0].UserTypeName || ""
-//     )
-//       .trim()
-//       .toLowerCase();
-
-//     console.log("----------------------------------");
-//     console.log("REGISTER USER");
-//     console.log("User Type:", userTypeName);
-//     console.log("Company Code:", companyCode);
-//     console.log("Member Number:", enteredMemberNumber);
-//     console.log("Mobile:", enteredMobile);
-//     console.log("----------------------------------");
-
-//     // ==================================================
-//     // SECRETARY
-//     //
-//     // SECRETARY MOBILE MUST MATCH tbl_Company.MobileNo
-//     // ==================================================
-//     if (userTypeName === "secretary") {
-//       console.log("Checking Secretary Company Mobile...");
-
-//       const companyResult = await pool
-//         .request()
-//         .input(
-//           "CompanyCode",
-//           sql.Int,
-//           companyCode
-//         )
-//         .query(`
-//           SELECT TOP 1
-//             CompanyCode,
-//             MobileNo
-//           FROM tbl_Company
-//           WHERE CompanyCode = @CompanyCode
-//         `);
-
-//       // ------------------------------------------------
-//       // COMPANY NOT FOUND
-//       // ------------------------------------------------
-//       if (companyResult.recordset.length === 0) {
-//         return res.status(400).json({
-//           success: false,
-//           message:
-//             "Invalid Company. Company does not exist.",
-//         });
-//       }
-
-//       const companyMobile = String(
-//         companyResult.recordset[0].MobileNo || ""
-//       ).trim();
-
-//       console.log(
-//         "Company Mobile:",
-//         companyMobile
-//       );
-
-//       console.log(
-//         "Entered Mobile:",
-//         enteredMobile
-//       );
-
-//       // ------------------------------------------------
-//       // COMPANY MOBILE CHECK
-//       // ------------------------------------------------
-//       if (companyMobile !== enteredMobile) {
-//         console.log(
-//           "SECRETARY MOBILE CHECK FAILED"
-//         );
-
-//         return res.status(400).json({
-//           success: false,
-//           message:
-//             "Invalid Mobile Number. Mobile number does not match the company.",
-//         });
-//       }
-
-//       console.log(
-//         "SECRETARY MOBILE CHECK SUCCESS"
-//       );
-//     }
-
-//     // ==================================================
-//     // MEMBER
-//     //
-//     // MEMBER NUMBER + COMPANY + MOBILE
-//     // MUST MATCH tbl_Member
-//     // ==================================================
-//     else if (userTypeName === "member") {
-//       console.log("Checking Member...");
-
-//       // ------------------------------------------------
-//       // MEMBER NUMBER REQUIRED
-//       // ------------------------------------------------
-//       if (!enteredMemberNumber) {
-//         return res.status(400).json({
-//           success: false,
-//           message:
-//             "Member Number is required for Member registration.",
-//         });
-//       }
-
-//       // ------------------------------------------------
-//       // CHECK MEMBER
-//       // ------------------------------------------------
-//       const memberResult = await pool
-//         .request()
-//         .input(
-//           "CompanyCode",
-//           sql.Int,
-//           companyCode
-//         )
-//         .input(
-//           "MemberNumber",
-//           sql.VarChar,
-//           enteredMemberNumber
-//         )
-//         .query(`
-//           SELECT TOP 1
-//             CompanyCode,
-//             MemberNumber,
-//             MobileNo
-//           FROM tbl_Member
-//           WHERE CompanyCode = @CompanyCode
-//             AND MemberNumber = @MemberNumber
-//         `);
-
-//       // ------------------------------------------------
-//       // MEMBER NOT FOUND
-//       // ------------------------------------------------
-//       if (memberResult.recordset.length === 0) {
-//         console.log(
-//           "MEMBER NOT FOUND"
-//         );
-
-//         return res.status(400).json({
-//           success: false,
-//           message:
-//             "Invalid Member Number. Member does not exist for the selected company.",
-//         });
-//       }
-
-//       const memberMobile = String(
-//         memberResult.recordset[0].MobileNo || ""
-//       ).trim();
-
-//       console.log(
-//         "Member Mobile:",
-//         memberMobile
-//       );
-
-//       console.log(
-//         "Entered Mobile:",
-//         enteredMobile
-//       );
-
-//       // ------------------------------------------------
-//       // MEMBER MOBILE CHECK
-//       // ------------------------------------------------
-//       if (memberMobile !== enteredMobile) {
-//         console.log(
-//           "MEMBER MOBILE CHECK FAILED"
-//         );
-
-//         return res.status(400).json({
-//           success: false,
-//           message:
-//             "Invalid Mobile Number. Mobile number does not match the member.",
-//         });
-//       }
-
-//       console.log(
-//         "MEMBER MOBILE CHECK SUCCESS"
-//       );
-//     }
-
-//     // ==================================================
-//     // INVALID USER TYPE
-//     // ==================================================
-//     else {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Only Secretary and Member registration is allowed.",
-//       });
-//     }
-
-//     // ==================================================
-//     // CHECK USERNAME
-//     // ==================================================
-//     const checkUser = await pool
-//       .request()
-//       .input(
-//         "UserName",
-//         sql.VarChar,
-//         enteredUserName
-//       )
-//       .query(`
-//         SELECT
-//           UserCode
-//         FROM tbl_User
-//         WHERE UserName = @UserName
-//       `);
-
-//     if (checkUser.recordset.length > 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Username already exists.",
-//       });
-//     }
-
-//     // ==================================================
-//     // CHECK SAME MEMBER ALREADY REGISTERED
-//     // ==================================================
-//     if (userTypeName === "member") {
-//       const existingMemberUser = await pool
-//         .request()
-//         .input(
-//           "CompanyCode",
-//           sql.Int,
-//           companyCode
-//         )
-//         .input(
-//           "MemberNumber",
-//           sql.VarChar,
-//           enteredMemberNumber
-//         )
-//         .query(`
-//           SELECT
-//             UserCode
-//           FROM tbl_User
-//           WHERE CompanyCode = @CompanyCode
-//             AND MemberNumber = @MemberNumber
-//         `);
-
-//       if (
-//         existingMemberUser.recordset.length > 0
-//       ) {
-//         return res.status(400).json({
-//           success: false,
-//           message:
-//             "This member is already registered.",
-//         });
-//       }
-//     }
-
-//     // ==================================================
-//     // GENERATE USER CODE
-//     // ==================================================
-//     const userCodeResult = await pool
-//       .request()
-//       .query(`
-//         SELECT
-//           ISNULL(MAX(UserCode), 0) + 1 AS UserCode
-//         FROM tbl_User
-//       `);
-
-//     const newUserCode =
-//       userCodeResult.recordset[0].UserCode;
-
-//     // ==================================================
-//     // INSERT USER
-//     // ==================================================
-//     await pool
-//       .request()
-//       .input(
-//         "UserCode",
-//         sql.Int,
-//         newUserCode
-//       )
-//       .input(
-//         "UserTypeCode",
-//         sql.Int,
-//         Number(userTypeId)
-//       )
-//       .input(
-//         "CompanyCode",
-//         sql.Int,
-//         companyCode
-//       )
-//       .input(
-//         "MemberNumber",
-//         sql.VarChar,
-//         enteredMemberNumber
-//       )
-//       .input(
-//         "RegisteredMobileNumber",
-//         sql.VarChar,
-//         enteredMobile
-//       )
-//       .input(
-//         "UserName",
-//         sql.VarChar,
-//         enteredUserName
-//       )
-//       .input(
-//         "Password",
-//         sql.VarChar,
-//         String(password)
-//       )
-//       .query(`
-//         INSERT INTO tbl_User
-//         (
-//           UserCode,
-//           UserTypeCode,
-//           CompanyCode,
-//           MemberNumber,
-//           RegisteredMobileNumber,
-//           UserName,
-//           Password,
-//           C_Date
-//         )
-//         VALUES
-//         (
-//           @UserCode,
-//           @UserTypeCode,
-//           @CompanyCode,
-//           @MemberNumber,
-//           @RegisteredMobileNumber,
-//           @UserName,
-//           @Password,
-//           GETDATE()
-//         )
-//       `);
-
-//     // ==================================================
-//     // SUCCESS
-//     // ==================================================
-//     console.log(
-//       "USER CREATED:",
-//       newUserCode
-//     );
-
-//     return res.status(201).json({
-//       success: true,
-//       message:
-//         "User created successfully.",
-//       userCode: newUserCode,
-//     });
-
-//   } catch (err) {
-//     console.error(
-//       "POST /register ERROR:",
-//       err
-//     );
-
-//     return res.status(500).json({
-//       success: false,
-//       message:
-//         "User registration failed.",
-//       error: err.message,
-//     });
-//   }
-// });
-
-// // ======================================================
-// // EXPORT ROUTER
-// // ======================================================
-// module.exports = router;
-
 const express = require("express");
 const router = express.Router();
 const sql = require("mssql");
@@ -745,15 +53,12 @@ router.get("/Company", async (req, res) => {
         RTRIM(ISNULL(Header1, '')) +
         RTRIM(ISNULL(Header2, ''))
       ) > 10
-        AND LEN(RTRIM(ISNULL(MobileNo, ''))) = 10
-        AND EDNO > 0
+      AND LEN(RTRIM(ISNULL(MobileNo, ''))) = 10
+      AND EDNO > 0
       ORDER BY EDNO
     `);
 
-    console.log(
-      "Companies:",
-      result.recordset.length
-    );
+    console.log("Companies:", result.recordset.length);
 
     return res.json(result.recordset);
   } catch (err) {
@@ -794,6 +99,9 @@ router.post("/login", async (req, res) => {
 
     // ==================================================
     // GET USER
+    // IMPORTANT:
+    // Database column = [NUMBER]
+    // JavaScript field = MemberNumber
     // ==================================================
     const result = await pool
       .request()
@@ -804,7 +112,7 @@ router.post("/login", async (req, res) => {
       )
       .input(
         "UserName",
-        sql.VarChar,
+        sql.VarChar(100),
         String(userName).trim()
       )
       .query(`
@@ -814,7 +122,9 @@ router.post("/login", async (req, res) => {
           u.Password,
           u.UserTypeCode,
           u.CompanyCode,
-          u.MemberNumber,
+
+          -- DATABASE COLUMN IS NUMBER
+          u.[NUMBER] AS MemberNumber,
 
           t.UserTypeName,
 
@@ -852,10 +162,7 @@ router.post("/login", async (req, res) => {
     // ==================================================
     // PASSWORD CHECK
     // ==================================================
-    if (
-      String(row.Password) !==
-      String(password)
-    ) {
+    if (String(row.Password) !== String(password)) {
       return res.status(401).json({
         success: false,
         message:
@@ -896,14 +203,12 @@ router.post("/login", async (req, res) => {
             ? row.CompanyName
             : "",
 
+        // SQL alias gives us MemberNumber
         memberNumber: row.MemberNumber,
       },
     });
   } catch (err) {
-    console.error(
-      "POST /login ERROR:",
-      err
-    );
+    console.error("POST /login ERROR:", err);
 
     return res.status(500).json({
       success: false,
@@ -923,8 +228,12 @@ router.post("/login", async (req, res) => {
 //
 // MEMBER:
 //   CompanyCode
-//   MemberNumber
+//   MemberNumber -> tbl_Member.[NUMBER]
 //   Mobile -> tbl_Member.MobileNo
+//
+// IMPORTANT:
+// JavaScript variable = MemberNumber
+// SQL column = [NUMBER]
 // ======================================================
 router.post("/register", async (req, res) => {
   try {
@@ -938,14 +247,10 @@ router.post("/register", async (req, res) => {
     } = req.body;
 
     console.log("");
-    console.log(
-      "======================================"
-    );
+    console.log("======================================");
     console.log("REGISTER REQUEST");
     console.log("Body:", req.body);
-    console.log(
-      "======================================"
-    );
+    console.log("======================================");
 
     // ==================================================
     // BASIC VALIDATION
@@ -1005,6 +310,8 @@ router.post("/register", async (req, res) => {
       userName
     ).trim();
 
+    const enteredPassword = String(password);
+
     // ==================================================
     // COMPANY CODE VALIDATION
     // ==================================================
@@ -1022,14 +329,32 @@ router.post("/register", async (req, res) => {
     // MOBILE VALIDATION
     // ==================================================
     if (
-      !/^[6-9][0-9]{9}$/.test(
-        enteredMobile
-      )
+      !/^[6-9][0-9]{9}$/.test(enteredMobile)
     ) {
       return res.status(400).json({
         success: false,
         message:
           "Invalid mobile number. Enter a valid 10 digit mobile number.",
+      });
+    }
+
+    // ==================================================
+    // USERNAME VALIDATION
+    // ==================================================
+    if (!enteredUserName) {
+      return res.status(400).json({
+        success: false,
+        message: "Username is required.",
+      });
+    }
+
+    // ==================================================
+    // PASSWORD VALIDATION
+    // ==================================================
+    if (!enteredPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is required.",
       });
     }
 
@@ -1051,9 +376,7 @@ router.post("/register", async (req, res) => {
         WHERE UserTypeCode = @UserTypeCode
       `);
 
-    if (
-      userTypeResult.recordset.length === 0
-    ) {
+    if (userTypeResult.recordset.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid user type.",
@@ -1061,53 +384,33 @@ router.post("/register", async (req, res) => {
     }
 
     const userTypeName = String(
-      userTypeResult.recordset[0]
-        .UserTypeName || ""
+      userTypeResult.recordset[0].UserTypeName || ""
     )
       .trim()
       .toLowerCase();
 
-    console.log(
-      "User Type:",
-      userTypeName
-    );
-
-    console.log(
-      "Company Code:",
-      companyCode
-    );
-
+    console.log("----------------------------------");
+    console.log("REGISTER USER");
+    console.log("User Type:", userTypeName);
+    console.log("Company Code:", companyCode);
     console.log(
       "Member Number:",
       enteredMemberNumber
     );
-
     console.log(
       "Entered Mobile:",
       enteredMobile
     );
+    console.log("----------------------------------");
 
     // ==================================================
-    // SECRETARY
+    // SECRETARY REGISTRATION
     //
-    // tbl_Company ONLY
-    //
-    // CompanyCode
-    //     +
-    // MobileNo
+    // Mobile must match tbl_Company.MobileNo
     // ==================================================
     if (userTypeName === "secretary") {
-      console.log(
-        "----------------------------------"
-      );
-
-      console.log(
-        "SECRETARY REGISTRATION"
-      );
-
-      console.log(
-        "Checking tbl_Company..."
-      );
+      console.log("SECRETARY REGISTRATION");
+      console.log("Checking tbl_Company...");
 
       const companyResult = await pool
         .request()
@@ -1124,15 +427,11 @@ router.post("/register", async (req, res) => {
           WHERE CompanyCode = @CompanyCode
         `);
 
-      // ==================================================
+      // =================================================
       // COMPANY NOT FOUND
-      // ==================================================
-      if (
-        companyResult.recordset.length === 0
-      ) {
-        console.log(
-          "COMPANY NOT FOUND"
-        );
+      // =================================================
+      if (companyResult.recordset.length === 0) {
+        console.log("COMPANY NOT FOUND");
 
         return res.status(400).json({
           success: false,
@@ -1142,8 +441,7 @@ router.post("/register", async (req, res) => {
       }
 
       const companyMobile = String(
-        companyResult.recordset[0]
-          .MobileNo || ""
+        companyResult.recordset[0].MobileNo || ""
       ).trim();
 
       console.log(
@@ -1156,15 +454,10 @@ router.post("/register", async (req, res) => {
         enteredMobile
       );
 
-      // ==================================================
-      // SECRETARY MOBILE CHECK
-      //
-      // DO NOT CHANGE
-      // ==================================================
-      if (
-        companyMobile !==
-        enteredMobile
-      ) {
+      // =================================================
+      // COMPANY MOBILE CHECK
+      // =================================================
+      if (companyMobile !== enteredMobile) {
         console.log(
           "SECRETARY MOBILE CHECK FAILED"
         );
@@ -1182,34 +475,20 @@ router.post("/register", async (req, res) => {
     }
 
     // ==================================================
-    // MEMBER
+    // MEMBER REGISTRATION
     //
-    // tbl_Member ONLY
-    //
+    // tbl_Member:
     // CompanyCode
-    //     +
-    // MemberNumber
-    //     +
+    // [NUMBER]
     // MobileNo
     // ==================================================
-    else if (
-      userTypeName === "member"
-    ) {
-      console.log(
-        "----------------------------------"
-      );
+    else if (userTypeName === "member") {
+      console.log("MEMBER REGISTRATION");
+      console.log("Checking tbl_Member...");
 
-      console.log(
-        "MEMBER REGISTRATION"
-      );
-
-      console.log(
-        "Checking tbl_Member..."
-      );
-
-      // ==================================================
+      // =================================================
       // MEMBER NUMBER REQUIRED
-      // ==================================================
+      // =================================================
       if (!enteredMemberNumber) {
         return res.status(400).json({
           success: false,
@@ -1218,9 +497,12 @@ router.post("/register", async (req, res) => {
         });
       }
 
-      // ==================================================
-      // GET MEMBER
-      // ==================================================
+      // =================================================
+      // CHECK MEMBER
+      //
+      // IMPORTANT:
+      // Database column = [NUMBER]
+      // =================================================
       const memberResult = await pool
         .request()
         .input(
@@ -1230,28 +512,30 @@ router.post("/register", async (req, res) => {
         )
         .input(
           "MemberNumber",
-          sql.VarChar,
+          sql.VarChar(100),
           enteredMemberNumber
         )
         .query(`
           SELECT TOP 1
             CompanyCode,
-            MemberNumber,
+
+            -- DATABASE COLUMN [NUMBER]
+            [NUMBER] AS MemberNumber,
+
             MobileNo
+
           FROM tbl_Member
-          WHERE CompanyCode = @CompanyCode
-            AND MemberNumber = @MemberNumber
+
+          WHERE
+            CompanyCode = @CompanyCode
+            AND [NUMBER] = @MemberNumber
         `);
 
-      // ==================================================
+      // =================================================
       // MEMBER NOT FOUND
-      // ==================================================
-      if (
-        memberResult.recordset.length === 0
-      ) {
-        console.log(
-          "MEMBER NOT FOUND"
-        );
+      // =================================================
+      if (memberResult.recordset.length === 0) {
+        console.log("MEMBER NOT FOUND");
 
         return res.status(400).json({
           success: false,
@@ -1287,18 +571,10 @@ router.post("/register", async (req, res) => {
         enteredMobile
       );
 
-      // ==================================================
+      // =================================================
       // MEMBER MOBILE CHECK
-      //
-      // IMPORTANT:
-      // CHECK tbl_Member.MobileNo
-      //
-      // NOT tbl_Company.MobileNo
-      // ==================================================
-      if (
-        memberMobile !==
-        enteredMobile
-      ) {
+      // =================================================
+      if (memberMobile !== enteredMobile) {
         console.log(
           "MEMBER MOBILE CHECK FAILED"
         );
@@ -1333,19 +609,17 @@ router.post("/register", async (req, res) => {
       .request()
       .input(
         "UserName",
-        sql.VarChar,
+        sql.VarChar(100),
         enteredUserName
       )
       .query(`
-        SELECT
+        SELECT TOP 1
           UserCode
         FROM tbl_User
         WHERE UserName = @UserName
       `);
 
-    if (
-      checkUser.recordset.length > 0
-    ) {
+    if (checkUser.recordset.length > 0) {
       return res.status(400).json({
         success: false,
         message:
@@ -1355,10 +629,11 @@ router.post("/register", async (req, res) => {
 
     // ==================================================
     // CHECK MEMBER ALREADY REGISTERED
+    //
+    // IMPORTANT:
+    // tbl_User database column = [NUMBER]
     // ==================================================
-    if (
-      userTypeName === "member"
-    ) {
+    if (userTypeName === "member") {
       const existingMemberUser =
         await pool
           .request()
@@ -1369,25 +644,62 @@ router.post("/register", async (req, res) => {
           )
           .input(
             "MemberNumber",
-            sql.VarChar,
+            sql.VarChar(100),
             enteredMemberNumber
           )
           .query(`
-            SELECT
+            SELECT TOP 1
               UserCode
             FROM tbl_User
-            WHERE CompanyCode = @CompanyCode
-              AND MemberNumber = @MemberNumber
+            WHERE
+              CompanyCode = @CompanyCode
+              AND [NUMBER] = @MemberNumber
           `);
 
       if (
-        existingMemberUser.recordset
-          .length > 0
+        existingMemberUser.recordset.length > 0
       ) {
         return res.status(400).json({
           success: false,
           message:
             "This member is already registered.",
+        });
+      }
+    }
+
+    // ==================================================
+    // CHECK SECRETARY ALREADY REGISTERED
+    // ==================================================
+    if (userTypeName === "secretary") {
+      const existingSecretary =
+        await pool
+          .request()
+          .input(
+            "CompanyCode",
+            sql.Int,
+            companyCode
+          )
+          .input(
+            "UserTypeCode",
+            sql.Int,
+            Number(userTypeId)
+          )
+          .query(`
+            SELECT TOP 1
+              UserCode
+            FROM tbl_User
+            WHERE
+              CompanyCode = @CompanyCode
+              AND UserTypeCode = @UserTypeCode
+          `);
+
+      if (
+        existingSecretary.recordset.length > 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This company already has a registered Secretary.",
         });
       }
     }
@@ -1404,9 +716,9 @@ router.post("/register", async (req, res) => {
           FROM tbl_User
         `);
 
-    const newUserCode =
-      userCodeResult.recordset[0]
-        .UserCode;
+    const newUserCode = Number(
+      userCodeResult.recordset[0].UserCode
+    );
 
     console.log(
       "New UserCode:",
@@ -1415,6 +727,9 @@ router.post("/register", async (req, res) => {
 
     // ==================================================
     // INSERT USER
+    //
+    // IMPORTANT:
+    // Database column = [NUMBER]
     // ==================================================
     await pool
       .request()
@@ -1435,23 +750,23 @@ router.post("/register", async (req, res) => {
       )
       .input(
         "MemberNumber",
-        sql.VarChar,
+        sql.VarChar(100),
         enteredMemberNumber
       )
       .input(
         "RegisteredMobileNumber",
-        sql.VarChar,
+        sql.VarChar(20),
         enteredMobile
       )
       .input(
         "UserName",
-        sql.VarChar,
+        sql.VarChar(100),
         enteredUserName
       )
       .input(
         "Password",
-        sql.VarChar,
-        String(password)
+        sql.VarChar(255),
+        enteredPassword
       )
       .query(`
         INSERT INTO tbl_User
@@ -1459,7 +774,10 @@ router.post("/register", async (req, res) => {
           UserCode,
           UserTypeCode,
           CompanyCode,
-          MemberNumber,
+
+          -- DATABASE COLUMN
+          [NUMBER],
+
           RegisteredMobileNumber,
           UserName,
           Password,
@@ -1481,56 +799,43 @@ router.post("/register", async (req, res) => {
     // ==================================================
     // SUCCESS
     // ==================================================
-    console.log(
-      "======================================"
-    );
-
-    console.log(
-      "USER CREATED SUCCESSFULLY"
-    );
-
-    console.log(
-      "UserCode:",
-      newUserCode
-    );
-
-    console.log(
-      "UserType:",
-      userTypeName
-    );
-
-    console.log(
-      "CompanyCode:",
-      companyCode
-    );
-
+    console.log("======================================");
+    console.log("USER CREATED SUCCESSFULLY");
+    console.log("UserCode:", newUserCode);
+    console.log("UserType:", userTypeName);
+    console.log("CompanyCode:", companyCode);
     console.log(
       "MemberNumber:",
       enteredMemberNumber
     );
-
-    console.log(
-      "======================================"
-    );
+    console.log("======================================");
 
     return res.status(201).json({
       success: true,
-      message:
-        "User created successfully.",
+      message: "User created successfully.",
       userCode: newUserCode,
     });
 
   } catch (err) {
-    console.error(
-      "POST /register ERROR:",
-      err
-    );
+    // ==================================================
+    // DATABASE ERROR
+    // ==================================================
+    console.error("======================================");
+    console.error("POST /register ERROR");
+    console.error("Error message:", err.message);
+    console.error("Error code:", err.code);
+    console.error("SQL number:", err.number);
+    console.error("SQL state:", err.state);
+    console.error("SQL class:", err.class);
+    console.error("Full error:", err);
+    console.error("======================================");
 
     return res.status(500).json({
       success: false,
-      message:
-        "User registration failed.",
+      message: "User registration failed.",
       error: err.message,
+      code: err.code || null,
+      number: err.number || null,
     });
   }
 });
