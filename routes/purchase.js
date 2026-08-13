@@ -3,10 +3,27 @@ const router = express.Router();
 const sql = require("mssql");
 const { getPool } = require("../db");
 
-const FULL_ACCESS_ROLES = ["secretary", "admin", "manager"];
+const FULL_ACCESS_ROLES = [
+  "secretary",
+  "admin",
+  "manager",
+];
 
 // =====================================================
 // GET PURCHASES
+// GET /api/purchases
+//
+// MAPPING:
+//
+// tbl_User.MemberNumber
+//          ↓
+// tbl_Member.Number
+//          ↓
+// tbl_Member.MemberCode
+//          ↓
+// tbl_Purchase.MemberCode
+//
+// CompanyCode must also match.
 // =====================================================
 router.get("/purchases", async (req, res) => {
   try {
@@ -18,17 +35,20 @@ router.get("/purchases", async (req, res) => {
       toDate,
     } = req.query;
 
-    console.log("PURCHASE REQUEST PARAMS:", {
-      userCode,
-      companyCode,
-      memberNumber,
-      fromDate,
-      toDate,
-    });
+    console.log("");
+    console.log("==============================================");
+    console.log("PURCHASE REQUEST");
+    console.log("==============================================");
+    console.log("userCode:", userCode);
+    console.log("companyCode:", companyCode);
+    console.log("memberNumber:", memberNumber);
+    console.log("fromDate:", fromDate);
+    console.log("toDate:", toDate);
+    console.log("==============================================");
 
-    // ---------------------------------------------
-    // Validate userCode
-    // ---------------------------------------------
+    // =================================================
+    // VALIDATE USER CODE
+    // =================================================
     if (!userCode) {
       return res.status(400).json({
         success: false,
@@ -36,19 +56,37 @@ router.get("/purchases", async (req, res) => {
       });
     }
 
+    const numericUserCode = Number(userCode);
+
+    if (
+      !Number.isInteger(numericUserCode) ||
+      numericUserCode <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid userCode.",
+      });
+    }
+
     const pool = await getPool();
 
-    // ---------------------------------------------
-    // Get logged-in user's actual role/company/member
-    // ---------------------------------------------
+    // =================================================
+    // GET LOGGED-IN USER
+    // =================================================
     const userResult = await pool
       .request()
-      .input("UserCode", sql.Int, userCode)
+      .input(
+        "UserCode",
+        sql.Int,
+        numericUserCode
+      )
       .query(`
         SELECT
           u.UserCode,
+          u.UserTypeCode,
           u.CompanyCode,
           u.MemberNumber,
+          u.UserName,
           t.UserTypeName
         FROM tbl_User u
         INNER JOIN tbl_UserType t
@@ -56,52 +94,85 @@ router.get("/purchases", async (req, res) => {
         WHERE u.UserCode = @UserCode
       `);
 
-    if (userResult.recordset.length === 0) {
-      console.log("PURCHASE: user not found for userCode", userCode);
+    // =================================================
+    // USER NOT FOUND
+    // =================================================
+    if (
+      userResult.recordset.length === 0
+    ) {
+      console.log(
+        "PURCHASE: USER NOT FOUND:",
+        numericUserCode
+      );
+
       return res.status(404).json({
         success: false,
         message: "User not found.",
       });
     }
 
-    const me = userResult.recordset[0];
+    const user = userResult.recordset[0];
 
-    const role = String(me.UserTypeName || "")
+    const role = String(
+      user.UserTypeName || ""
+    )
       .trim()
       .toLowerCase();
 
-    const fullAccess = FULL_ACCESS_ROLES.includes(role);
+    const fullAccess =
+      FULL_ACCESS_ROLES.includes(role);
 
-    console.log("PURCHASE: resolved user", {
-      UserCode: me.UserCode,
-      role,
-      fullAccess,
-      CompanyCode: me.CompanyCode,
-      MemberNumber: me.MemberNumber,
-    });
+    console.log("");
+    console.log("==============================================");
+    console.log("RESOLVED USER");
+    console.log("==============================================");
+    console.log("UserCode:", user.UserCode);
+    console.log("UserName:", user.UserName);
+    console.log("Role:", role);
+    console.log("Full Access:", fullAccess);
+    console.log("CompanyCode:", user.CompanyCode);
+    console.log(
+      "MemberNumber:",
+      user.MemberNumber
+    );
+    console.log("==============================================");
 
-    // ---------------------------------------------
-    // Build purchase WHERE condition
-    // ---------------------------------------------
+    // =================================================
+    // BUILD SQL REQUEST
+    // =================================================
     const request = pool.request();
 
     let where = "WHERE 1 = 1";
 
-    // ---------------------------------------------
-    // SECRETARY / ADMIN / MANAGER
-    // ---------------------------------------------
+    // =================================================
+    // FULL ACCESS USERS
+    //
+    // Secretary / Admin / Manager
+    // =================================================
     if (fullAccess) {
-      // Society filter
-      // companyCode may arrive as "1111" or "1111 - Some Society Name"
-      // from the frontend combobox — extract the numeric code only.
-      if (companyCode) {
-        const rawCompanyCode = String(companyCode).trim();
-        const numericCompanyCode = parseInt(
-          rawCompanyCode.split(/[\s-]/)[0],
-          10
-        );
 
-        if (!Number.isNaN(numericCompanyCode)) {
+      // -------------------------------------------------
+      // COMPANY FILTER
+      // -------------------------------------------------
+      if (
+        companyCode !== undefined &&
+        companyCode !== null &&
+        String(companyCode).trim() !== ""
+      ) {
+        const rawCompanyCode =
+          String(companyCode).trim();
+
+        // Accept:
+        // 1
+        // 1 - Society Name
+        // 1 Society Name
+        const match =
+          rawCompanyCode.match(/^\d+/);
+
+        if (match) {
+          const numericCompanyCode =
+            Number(match[0]);
+
           request.input(
             "FilterCompanyCode",
             sql.Int,
@@ -111,68 +182,178 @@ router.get("/purchases", async (req, res) => {
           where += `
             AND p.CompanyCode = @FilterCompanyCode
           `;
-        } else {
+
           console.log(
-            "PURCHASE: companyCode could not be parsed as a number:",
-            companyCode
+            "Company filter:",
+            numericCompanyCode
           );
         }
       }
 
-      // Member Number filter
-      if (memberNumber) {
+      // -------------------------------------------------
+      // MEMBER NUMBER FILTER
+      //
+      // IMPORTANT:
+      //
+      // frontend memberNumber
+      //       ↓
+      // tbl_Member.Number
+      //       ↓
+      // tbl_Member.MemberCode
+      //       ↓
+      // tbl_Purchase.MemberCode
+      // -------------------------------------------------
+      if (
+        memberNumber !== undefined &&
+        memberNumber !== null &&
+        String(memberNumber).trim() !== ""
+      ) {
+        const enteredMemberNumber =
+          String(memberNumber).trim();
+
         request.input(
           "FilterMemberNumber",
-          sql.VarChar(50),
-          String(memberNumber).trim()
+          sql.VarChar(100),
+          enteredMemberNumber
         );
 
         where += `
-          AND CONVERT(varchar(50), p.MemberCode)
-              = @FilterMemberNumber
+          AND EXISTS
+          (
+            SELECT 1
+            FROM tbl_Member m
+            WHERE
+              m.CompanyCode = p.CompanyCode
+              AND CONVERT(varchar(100), m.Number)
+                  = @FilterMemberNumber
+              AND CONVERT(varchar(100), m.MemberCode)
+                  = CONVERT(varchar(100), p.MemberCode)
+          )
         `;
+
+        console.log(
+          "Member number filter:",
+          enteredMemberNumber
+        );
       }
     }
 
-    // ---------------------------------------------
+    // =================================================
     // MEMBER USER
-    // ---------------------------------------------
+    //
+    // tbl_User.MemberNumber
+    //        =
+    // tbl_Member.Number
+    //
+    // tbl_Member.MemberCode
+    //        =
+    // tbl_Purchase.MemberCode
+    // =================================================
     else {
-      if (!me.CompanyCode || !me.MemberNumber) {
+
+      // -------------------------------------------------
+      // COMPANY CODE REQUIRED
+      // -------------------------------------------------
+      if (
+        user.CompanyCode === undefined ||
+        user.CompanyCode === null
+      ) {
         console.log(
-          "PURCHASE: non-full-access user is missing CompanyCode/MemberNumber — will match 0 rows.",
-          { CompanyCode: me.CompanyCode, MemberNumber: me.MemberNumber }
+          "PURCHASE: MEMBER USER HAS NO CompanyCode"
         );
+
+        return res.json({
+          success: true,
+          role: user.UserTypeName,
+          fullAccess: false,
+          records: [],
+          summary: {
+            count: 0,
+            totalQty: 0,
+            totalAmount: 0,
+            avgFat: 0,
+          },
+        });
+      }
+
+      // -------------------------------------------------
+      // MEMBER NUMBER REQUIRED
+      // -------------------------------------------------
+      if (
+        user.MemberNumber === undefined ||
+        user.MemberNumber === null ||
+        String(user.MemberNumber).trim() === ""
+      ) {
+        console.log(
+          "PURCHASE: MEMBER USER HAS NO MemberNumber"
+        );
+
+        return res.json({
+          success: true,
+          role: user.UserTypeName,
+          fullAccess: false,
+          records: [],
+          summary: {
+            count: 0,
+            totalQty: 0,
+            totalAmount: 0,
+            avgFat: 0,
+          },
+        });
       }
 
       request.input(
         "UserCompanyCode",
         sql.Int,
-        me.CompanyCode
+        Number(user.CompanyCode)
       );
 
       request.input(
         "UserMemberNumber",
-        sql.VarChar(50),
-        String(me.MemberNumber || "").trim()
+        sql.VarChar(100),
+        String(user.MemberNumber).trim()
       );
 
       where += `
         AND p.CompanyCode = @UserCompanyCode
-        AND CONVERT(varchar(50), p.MemberCode)
-            = @UserMemberNumber
+
+        AND EXISTS
+        (
+          SELECT 1
+          FROM tbl_Member m
+          WHERE
+            m.CompanyCode = p.CompanyCode
+
+            AND CONVERT(varchar(100), m.Number)
+                = @UserMemberNumber
+
+            AND CONVERT(varchar(100), m.MemberCode)
+                = CONVERT(varchar(100), p.MemberCode)
+        )
       `;
+
+      console.log(
+        "Member CompanyCode:",
+        user.CompanyCode
+      );
+
+      console.log(
+        "Member Number:",
+        user.MemberNumber
+      );
     }
 
-    // ---------------------------------------------
-    // DATE FILTER
-    // ---------------------------------------------
-
-    if (fromDate) {
+    // =================================================
+    // FROM DATE
+    // =================================================
+    if (
+      fromDate &&
+      String(fromDate).trim() !== ""
+    ) {
       request.input(
         "FromDate",
         sql.Date,
-        fromDate
+        String(fromDate).trim()
       );
 
       where += `
@@ -180,11 +361,17 @@ router.get("/purchases", async (req, res) => {
       `;
     }
 
-    if (toDate) {
+    // =================================================
+    // TO DATE
+    // =================================================
+    if (
+      toDate &&
+      String(toDate).trim() !== ""
+    ) {
       request.input(
         "ToDate",
         sql.Date,
-        toDate
+        String(toDate).trim()
       );
 
       where += `
@@ -192,11 +379,19 @@ router.get("/purchases", async (req, res) => {
       `;
     }
 
-    console.log("PURCHASE: final WHERE clause:", where);
+    // =================================================
+    // FINAL WHERE
+    // =================================================
+    console.log("");
+    console.log("==============================================");
+    console.log("FINAL PURCHASE WHERE");
+    console.log("==============================================");
+    console.log(where);
+    console.log("==============================================");
 
-    // ---------------------------------------------
-    // PURCHASE QUERY
-    // ---------------------------------------------
+    // =================================================
+    // GET PURCHASE RECORDS
+    // =================================================
     const result = await request.query(`
       SELECT
 
@@ -209,8 +404,12 @@ router.get("/purchases", async (req, res) => {
         ) AS PurchaseDate,
 
         CASE
-          WHEN p.Shift = 'M' THEN 'Morning'
-          WHEN p.Shift = 'E' THEN 'Evening'
+          WHEN p.Shift = 'M'
+            THEN 'Morning'
+
+          WHEN p.Shift = 'E'
+            THEN 'Evening'
+
           ELSE ISNULL(p.Shift, '-')
         END AS ShiftName,
 
@@ -228,36 +427,35 @@ router.get("/purchases", async (req, res) => {
 
         p.CompanyCode,
 
-        -- Prefer a "clean" company record (matches the stricter
-        -- OUTER APPLY conditions), but fall back to any matching
-        -- company row so CompanyName isn't silently blanked out.
         RTRIM(
-          ISNULL(cPreferred.Header1, ISNULL(cAny.Header1, '')) +
-          ISNULL(cPreferred.Header2, ISNULL(cAny.Header2, ''))
-        ) AS CompanyName
+          ISNULL(c.Header1, '') +
+          ISNULL(c.Header2, '')
+        ) AS CompanyName,
+
+        m.Number AS ActualMemberNumber,
+
+        m.MemberCode AS ActualMemberCode,
+
+        m.MemberName,
+
+        m.MobileNo
 
       FROM tbl_Purchase p
 
-      OUTER APPLY (
-        SELECT TOP 1
-          co.Header1,
-          co.Header2
-        FROM tbl_Company co
-        WHERE co.CompanyCode = p.CompanyCode
-          AND LEN(RTRIM(ISNULL(co.Header1, '')) + RTRIM(ISNULL(co.Header2, ''))) > 10
-          AND LEN(co.MobileNo) = 10
-          AND co.EDNO > 0
-        ORDER BY co.EDNO
-      ) cPreferred
+      LEFT JOIN tbl_Member m
+        ON m.CompanyCode = p.CompanyCode
+        AND CONVERT(varchar(100), m.MemberCode)
+            = CONVERT(varchar(100), p.MemberCode)
 
-      OUTER APPLY (
+      OUTER APPLY
+      (
         SELECT TOP 1
           co.Header1,
           co.Header2
         FROM tbl_Company co
         WHERE co.CompanyCode = p.CompanyCode
         ORDER BY co.EDNO
-      ) cAny
+      ) c
 
       ${where}
 
@@ -265,35 +463,59 @@ router.get("/purchases", async (req, res) => {
         p.PurchaseDate DESC,
 
         CASE
-          WHEN p.Shift = 'M' THEN 1
-          WHEN p.Shift = 'E' THEN 2
+          WHEN p.Shift = 'M'
+            THEN 1
+
+          WHEN p.Shift = 'E'
+            THEN 2
+
           ELSE 3
         END,
 
         p.Purchasenumber DESC
     `);
 
-    // ---------------------------------------------
+    // =================================================
     // RECORDS
-    // ---------------------------------------------
-    const records = result.recordset;
+    // =================================================
+    const records =
+      result.recordset || [];
 
-    console.log("PURCHASE: rows returned:", records.length);
+    console.log("");
+    console.log("==============================================");
+    console.log(
+      "PURCHASE ROWS RETURNED:",
+      records.length
+    );
+    console.log("==============================================");
 
-    // ---------------------------------------------
+    // Show first few rows for debugging
+    if (records.length > 0) {
+      console.log(
+        "FIRST PURCHASE:",
+        records[0]
+      );
+    }
+
+    // =================================================
     // SUMMARY
-    // ---------------------------------------------
+    // =================================================
     const summary = records.reduce(
-      (acc, r) => {
-        acc.totalQty += Number(r.QtyLtr) || 0;
+      (acc, row) => {
 
-        acc.totalAmount += Number(r.Amount) || 0;
+        acc.totalQty +=
+          Number(row.QtyLtr) || 0;
 
-        acc.fatSum += Number(r.FatPercent) || 0;
+        acc.totalAmount +=
+          Number(row.Amount) || 0;
+
+        acc.fatSum +=
+          Number(row.FatPercent) || 0;
 
         acc.count += 1;
 
         return acc;
+
       },
       {
         totalQty: 0,
@@ -303,13 +525,13 @@ router.get("/purchases", async (req, res) => {
       }
     );
 
-    // ---------------------------------------------
+    // =================================================
     // RESPONSE
-    // ---------------------------------------------
+    // =================================================
     return res.json({
       success: true,
 
-      role: me.UserTypeName,
+      role: user.UserTypeName,
 
       fullAccess,
 
@@ -338,11 +560,24 @@ router.get("/purchases", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("PURCHASE API ERROR:", err);
+
+    console.error("");
+    console.error("==============================================");
+    console.error("PURCHASE API ERROR");
+    console.error("==============================================");
+    console.error("Message:", err.message);
+    console.error("Code:", err.code);
+    console.error("Number:", err.number);
+    console.error("State:", err.state);
+    console.error("Full Error:", err);
+    console.error("==============================================");
 
     return res.status(500).json({
       success: false,
-      message: err.message,
+      message: "Failed to load purchase records.",
+      error: err.message,
+      code: err.code || null,
+      number: err.number || null,
     });
   }
 });
