@@ -537,12 +537,69 @@ console.log("======================================");
       `;
     }
 
-    // =================================================
-    // PURCHASE SQL
-    // =================================================
+//     // =================================================
+//     // PURCHASE SQL
+//     // =================================================
 
-    const purchaseQuery = `
-  SELECT
+//     const purchaseQuery = `
+//   SELECT
+//     p.CompanyCode,
+//     p.SubCentreCode,
+//     p.Purchasenumber,
+//     p.PurchaseDate,
+//     p.Milk,
+//     p.Shift,
+//     p.MemberCode,
+//     p.Sample,
+//     p.Qty,
+//     p.Test,
+//     p.Lr,
+//     p.Snf,
+//     p.Rate,
+//     p.Rating,
+//     p.Amount,
+//     p.countno,
+//     p.C_Date,
+//     p.C_User,
+//     p.C_Node,
+//     p.E_Date,
+//     p.E_User,
+//     p.E_Node,
+//     p.EDno,
+//     p.Export,
+//     p.Number
+//   FROM tbl_Purchase p
+//   ${where}
+//   ORDER BY
+//     p.PurchaseDate DESC,
+//     p.Purchasenumber DESC
+// `;
+
+// =====================================================
+// DEFAULT DATE FILTER FOR PERFORMANCE
+// =====================================================
+
+// If Secretary does not select a date,
+// load only the latest 30 days.
+//
+// This prevents SQL Server from scanning the
+// entire tbl_Purchase table.
+
+if (
+  !fromDate &&
+  !toDate
+) {
+  where += `
+    AND p.PurchaseDate >= DATEADD(day, -30, GETDATE())
+  `;
+}
+
+// =====================================================
+// PURCHASE QUERY
+// =====================================================
+
+const purchaseQuery = `
+  SELECT TOP 500
     p.CompanyCode,
     p.SubCentreCode,
     p.Purchasenumber,
@@ -574,6 +631,24 @@ console.log("======================================");
     p.PurchaseDate DESC,
     p.Purchasenumber DESC
 `;
+
+console.log("======================================");
+console.log("FINAL PURCHASE SQL");
+console.log(purchaseQuery);
+console.log("======================================");
+
+const result = await request.query(purchaseQuery);
+
+console.log("======================================");
+console.log("SQL QUERY COMPLETED");
+console.log("======================================");
+
+const records = result.recordset || [];
+
+console.log(
+  "PURCHASE RECORD COUNT:",
+  records.length
+);
 
     // =================================================
     // DEBUG SQL
