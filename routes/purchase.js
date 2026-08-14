@@ -132,81 +132,68 @@ router.get("/purchases", async (req, res) => {
     // ROLE
     // =================================================
 
-    const originalRole =
-      String(
-        me.UserTypeName || ""
-      ).trim();
+    const userTypeCode = Number(
+  me.UserTypeCode
+);
 
-    const role =
-      originalRole.toLowerCase();
+const originalRole = String(
+  me.UserTypeName || ""
+).trim();
 
-    // =================================================
-    // ACCESS
-    // =================================================
+const role = originalRole
+  .toLowerCase()
+  .replace(/\s+/g, " ")
+  .trim();
 
-    const fullAccess =
-      FULL_ACCESS_ROLES.includes(role);
+// =====================================================
+// SECRETARY DETECTION
+// UserTypeCode 2 = Secretary in your database
+// =====================================================
 
-    const allowed =
-      ALLOWED_ROLES.includes(role);
+const isSecretary =
+  userTypeCode === 2 ||
+  role === "secretary" ||
+  role === "secretary";
 
-    // =================================================
-    // DEBUG USER
-    // =================================================
+// =====================================================
+// MEMBER DETECTION
+// =====================================================
 
-    console.log("");
-    console.log("======================================");
-    console.log("LOGGED-IN USER");
-    console.log("======================================");
+const isMember =
+  role === "member";
 
-    console.log(
-      "UserCode:",
-      me.UserCode
-    );
+// =====================================================
+// ACCESS
+// =====================================================
 
-    console.log(
-      "UserName:",
-      me.UserName
-    );
+const fullAccess =
+  isSecretary;
 
-    console.log(
-      "UserTypeCode:",
-      me.UserTypeCode
-    );
+const allowed =
+  isSecretary ||
+  isMember;
 
-    console.log(
-      "Original Role:",
-      originalRole
-    );
+// =====================================================
+// DEBUG
+// =====================================================
 
-    console.log(
-      "Normalized Role:",
-      role
-    );
+console.log("======================================");
+console.log("PURCHASE ROLE DEBUG");
+console.log("======================================");
 
-    console.log(
-      "CompanyCode:",
-      me.CompanyCode
-    );
+console.log("UserCode:", me.UserCode);
+console.log("UserName:", me.UserName);
+console.log("UserTypeCode:", me.UserTypeCode);
+console.log("UserTypeCode Number:", userTypeCode);
+console.log("UserTypeName RAW:", me.UserTypeName);
+console.log("Original Role:", originalRole);
+console.log("Normalized Role:", role);
+console.log("Is Secretary:", isSecretary);
+console.log("Is Member:", isMember);
+console.log("Full Access:", fullAccess);
+console.log("Allowed:", allowed);
 
-    console.log(
-      "MemberNumber:",
-      me.MemberNumber
-    );
-
-    console.log(
-      "Full Access:",
-      fullAccess
-    );
-
-    console.log(
-      "Allowed:",
-      allowed
-    );
-
-    console.log(
-      "======================================"
-    );
+console.log("======================================");
 
     // =================================================
     // ONLY SECRETARY + MEMBER
