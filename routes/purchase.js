@@ -542,68 +542,38 @@ console.log("======================================");
     // =================================================
 
     const purchaseQuery = `
-      SELECT
-
-        p.CompanyCode,
-
-        p.SubCentreCode,
-
-        p.Purchasenumber,
-
-        p.PurchaseDate,
-
-        p.Milk,
-
-        p.Shift,
-
-        p.MemberCode,
-
-        p.Sample,
-
-        p.Qty,
-
-        p.Test,
-
-        p.Lr,
-
-        p.Snf,
-
-        p.Rate,
-
-        p.Rating,
-
-        p.Amount,
-
-        p.countno,
-
-        p.C_Date,
-
-        p.C_User,
-
-        p.C_Node,
-
-        p.E_Date,
-
-        p.E_User,
-
-        p.E_Node,
-
-        p.EDno,
-
-        p.Export,
-
-        p.Number,
-
-        p.OnLine
-
-      FROM tbl_Purchase p
-
-      ${where}
-
-      ORDER BY
-        p.PurchaseDate DESC,
-        p.Purchasenumber DESC
-    `;
+  SELECT
+    p.CompanyCode,
+    p.SubCentreCode,
+    p.Purchasenumber,
+    p.PurchaseDate,
+    p.Milk,
+    p.Shift,
+    p.MemberCode,
+    p.Sample,
+    p.Qty,
+    p.Test,
+    p.Lr,
+    p.Snf,
+    p.Rate,
+    p.Rating,
+    p.Amount,
+    p.countno,
+    p.C_Date,
+    p.C_User,
+    p.C_Node,
+    p.E_Date,
+    p.E_User,
+    p.E_Node,
+    p.EDno,
+    p.Export,
+    p.Number
+  FROM tbl_Purchase p
+  ${where}
+  ORDER BY
+    p.PurchaseDate DESC,
+    p.Purchasenumber DESC
+`;
 
     // =================================================
     // DEBUG SQL
