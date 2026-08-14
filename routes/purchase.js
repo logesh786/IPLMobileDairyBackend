@@ -125,78 +125,120 @@ router.get("/purchases", async (req, res) => {
     // USER DATA
     // =================================================
 
-    const me =
-      userResult.recordset[0];
+    const me = userResult.recordset[0];
 
     // =================================================
     // ROLE
     // =================================================
 
     const userTypeCode = Number(
-  me.UserTypeCode
-);
+      me.UserTypeCode
+    );
 
-const originalRole = String(
-  me.UserTypeName || ""
-).trim();
+    const originalRole = String(
+      me.UserTypeName || ""
+    ).trim();
 
-const role = originalRole
-  .toLowerCase()
-  .replace(/\s+/g, " ")
-  .trim();
-
-// =====================================================
-// SECRETARY DETECTION
-// UserTypeCode 2 = Secretary in your database
-// =====================================================
-
-const isSecretary =
-  userTypeCode === 2 ||
-  role === "secretary" ||
-  role === "secretary";
-
-// =====================================================
-// MEMBER DETECTION
-// =====================================================
-
-const isMember =
-  role === "member";
-
-// =====================================================
-// ACCESS
-// =====================================================
-
-const fullAccess =
-  isSecretary;
-
-const allowed =
-  isSecretary ||
-  isMember;
-
-// =====================================================
-// DEBUG
-// =====================================================
-
-console.log("======================================");
-console.log("PURCHASE ROLE DEBUG");
-console.log("======================================");
-
-console.log("UserCode:", me.UserCode);
-console.log("UserName:", me.UserName);
-console.log("UserTypeCode:", me.UserTypeCode);
-console.log("UserTypeCode Number:", userTypeCode);
-console.log("UserTypeName RAW:", me.UserTypeName);
-console.log("Original Role:", originalRole);
-console.log("Normalized Role:", role);
-console.log("Is Secretary:", isSecretary);
-console.log("Is Member:", isMember);
-console.log("Full Access:", fullAccess);
-console.log("Allowed:", allowed);
-
-console.log("======================================");
+    const role = originalRole
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
 
     // =================================================
-    // ONLY SECRETARY + MEMBER
+    // SECRETARY DETECTION
+    //
+    // UserTypeCode 2 = Secretary
+    // =================================================
+
+    const isSecretary =
+      userTypeCode === 2 ||
+      role === "secretary";
+
+    // =================================================
+    // MEMBER DETECTION
+    // =================================================
+
+    const isMember =
+      role === "member";
+
+    // =================================================
+    // ACCESS
+    // =================================================
+
+    const fullAccess =
+      isSecretary;
+
+    const allowed =
+      isSecretary ||
+      isMember;
+
+    // =================================================
+    // DEBUG ROLE
+    // =================================================
+
+    console.log("======================================");
+    console.log("PURCHASE ROLE DEBUG");
+    console.log("======================================");
+
+    console.log(
+      "UserCode:",
+      me.UserCode
+    );
+
+    console.log(
+      "UserName:",
+      me.UserName
+    );
+
+    console.log(
+      "UserTypeCode:",
+      me.UserTypeCode
+    );
+
+    console.log(
+      "UserTypeCode Number:",
+      userTypeCode
+    );
+
+    console.log(
+      "UserTypeName RAW:",
+      me.UserTypeName
+    );
+
+    console.log(
+      "Original Role:",
+      originalRole
+    );
+
+    console.log(
+      "Normalized Role:",
+      role
+    );
+
+    console.log(
+      "Is Secretary:",
+      isSecretary
+    );
+
+    console.log(
+      "Is Member:",
+      isMember
+    );
+
+    console.log(
+      "Full Access:",
+      fullAccess
+    );
+
+    console.log(
+      "Allowed:",
+      allowed
+    );
+
+    console.log("======================================");
+
+    // =================================================
+    // ACCESS DENIED
     // =================================================
 
     if (!allowed) {
@@ -213,7 +255,7 @@ console.log("======================================");
     }
 
     // =================================================
-    // BUILD SQL
+    // BUILD SQL WHERE
     // =================================================
 
     let where = `
@@ -226,16 +268,8 @@ console.log("======================================");
     // =================================================
     // SECRETARY
     // =================================================
-    //
-    // Secretary:
-    // - Full access
-    // - MemberNumber NOT required
-    // - CompanyCode used when available
-    // - Optional companyCode from frontend
-    // - Optional memberNumber filter
-    // =================================================
 
-    if (role === "secretary") {
+    if (isSecretary) {
       console.log("");
       console.log(
         "======================================"
@@ -269,6 +303,11 @@ console.log("======================================");
         ) {
           filterCompanyCode =
             numericCompanyCode;
+        } else {
+          console.log(
+            "INVALID FRONTEND COMPANY CODE:",
+            companyCode
+          );
         }
       }
 
@@ -315,7 +354,7 @@ console.log("======================================");
       }
 
       // ------------------------------------------------
-      // OPTIONAL MEMBER FILTER
+      // OPTIONAL MEMBER NUMBER FILTER
       // ------------------------------------------------
 
       if (
@@ -334,8 +373,6 @@ console.log("======================================");
           filterMemberNumber
         );
 
-        // tbl_Purchase.Number is used
-        // for the member number filter.
         where += `
           AND CONVERT(
             VARCHAR(100),
@@ -349,20 +386,18 @@ console.log("======================================");
         );
       }
 
-      // IMPORTANT:
-      // DO NOT CHECK me.MemberNumber HERE.
+      // Secretary does NOT require:
+      // me.MemberNumber
       //
       // Secretary can have:
       // MemberNumber = NULL
-      //
-      // This is valid.
     }
 
     // =================================================
     // MEMBER
     // =================================================
 
-    else if (role === "member") {
+    else if (isMember) {
       console.log("");
       console.log(
         "======================================"
@@ -443,7 +478,6 @@ console.log("======================================");
 
       // ------------------------------------------------
       // MEMBER MATCH
-      // ------------------------------------------------
       //
       // tbl_User.MemberNumber
       //       ↓
@@ -458,9 +492,7 @@ console.log("======================================");
         AND EXISTS
         (
           SELECT 1
-
           FROM tbl_Member m
-
           WHERE
             m.CompanyCode =
               p.CompanyCode
@@ -513,6 +545,11 @@ console.log("======================================");
           p.PurchaseDate AS DATE
         ) >= @FromDate
       `;
+
+      console.log(
+        "FROM DATE:",
+        fromDate
+      );
     }
 
     // =================================================
@@ -535,120 +572,81 @@ console.log("======================================");
           p.PurchaseDate AS DATE
         ) <= @ToDate
       `;
+
+      console.log(
+        "TO DATE:",
+        toDate
+      );
     }
 
-//     // =================================================
-//     // PURCHASE SQL
-//     // =================================================
+    // =================================================
+    // DEFAULT DATE FILTER
+    // =================================================
+    //
+    // If no date is selected,
+    // return latest 30 days only.
+    //
+    // This prevents scanning the entire
+    // tbl_Purchase table.
+    // =================================================
 
-//     const purchaseQuery = `
-//   SELECT
-//     p.CompanyCode,
-//     p.SubCentreCode,
-//     p.Purchasenumber,
-//     p.PurchaseDate,
-//     p.Milk,
-//     p.Shift,
-//     p.MemberCode,
-//     p.Sample,
-//     p.Qty,
-//     p.Test,
-//     p.Lr,
-//     p.Snf,
-//     p.Rate,
-//     p.Rating,
-//     p.Amount,
-//     p.countno,
-//     p.C_Date,
-//     p.C_User,
-//     p.C_Node,
-//     p.E_Date,
-//     p.E_User,
-//     p.E_Node,
-//     p.EDno,
-//     p.Export,
-//     p.Number
-//   FROM tbl_Purchase p
-//   ${where}
-//   ORDER BY
-//     p.PurchaseDate DESC,
-//     p.Purchasenumber DESC
-// `;
+    if (
+      (!fromDate ||
+        String(fromDate).trim() === "") &&
+      (!toDate ||
+        String(toDate).trim() === "")
+    ) {
+      where += `
+        AND p.PurchaseDate >=
+            DATEADD(
+              day,
+              -30,
+              GETDATE()
+            )
+      `;
 
-// =====================================================
-// DEFAULT DATE FILTER FOR PERFORMANCE
-// =====================================================
+      console.log(
+        "DEFAULT DATE FILTER: LAST 30 DAYS"
+      );
+    }
 
-// If Secretary does not select a date,
-// load only the latest 30 days.
-//
-// This prevents SQL Server from scanning the
-// entire tbl_Purchase table.
+    // =================================================
+    // PURCHASE QUERY
+    // =================================================
 
-if (
-  !fromDate &&
-  !toDate
-) {
-  where += `
-    AND p.PurchaseDate >= DATEADD(day, -30, GETDATE())
-  `;
-}
-
-// =====================================================
-// PURCHASE QUERY
-// =====================================================
-
-const purchaseQuery = `
-  SELECT TOP 500
-    p.CompanyCode,
-    p.SubCentreCode,
-    p.Purchasenumber,
-    p.PurchaseDate,
-    p.Milk,
-    p.Shift,
-    p.MemberCode,
-    p.Sample,
-    p.Qty,
-    p.Test,
-    p.Lr,
-    p.Snf,
-    p.Rate,
-    p.Rating,
-    p.Amount,
-    p.countno,
-    p.C_Date,
-    p.C_User,
-    p.C_Node,
-    p.E_Date,
-    p.E_User,
-    p.E_Node,
-    p.EDno,
-    p.Export,
-    p.Number
-  FROM tbl_Purchase p
-  ${where}
-  ORDER BY
-    p.PurchaseDate DESC,
-    p.Purchasenumber DESC
-`;
-
-console.log("======================================");
-console.log("FINAL PURCHASE SQL");
-console.log(purchaseQuery);
-console.log("======================================");
-
-const result = await request.query(purchaseQuery);
-
-console.log("======================================");
-console.log("SQL QUERY COMPLETED");
-console.log("======================================");
-
-const records = result.recordset || [];
-
-console.log(
-  "PURCHASE RECORD COUNT:",
-  records.length
-);
+    const purchaseQuery = `
+      SELECT TOP 500
+        p.CompanyCode,
+        p.SubCentreCode,
+        p.Purchasenumber,
+        p.PurchaseDate,
+        p.Milk,
+        p.Shift,
+        p.MemberCode,
+        p.Sample,
+        p.Qty,
+        p.Test,
+        p.Lr,
+        p.Snf,
+        p.Rate,
+        p.Rating,
+        p.Amount,
+        p.countno,
+        p.C_Date,
+        p.C_User,
+        p.C_Node,
+        p.E_Date,
+        p.E_User,
+        p.E_Node,
+        p.EDno,
+        p.Export,
+        p.Number
+      FROM tbl_Purchase p
+      ${where}
+      ORDER BY
+        p.PurchaseDate DESC,
+        p.Purchasenumber DESC
+    `;
 
     // =================================================
     // DEBUG SQL
@@ -658,27 +656,39 @@ console.log(
     console.log(
       "======================================"
     );
+
     console.log(
       "FINAL PURCHASE SQL"
     );
+
     console.log(
       "======================================"
     );
 
-    console.log(purchaseQuery);
+    console.log(
+      purchaseQuery
+    );
 
     console.log(
       "======================================"
     );
 
     // =================================================
-    // EXECUTE
+    // EXECUTE QUERY
     // =================================================
 
     const result =
       await request.query(
         purchaseQuery
       );
+
+    console.log(
+      "SQL QUERY COMPLETED"
+    );
+
+    // =================================================
+    // RECORDS
+    // =================================================
 
     const records =
       result.recordset || [];
@@ -729,6 +739,10 @@ console.log(
       }
     );
 
+    // =================================================
+    // AVERAGE FAT
+    // =================================================
+
     const avgFat =
       fatCount > 0
         ? totalFat / fatCount
@@ -769,9 +783,8 @@ console.log(
     });
 
   } catch (error) {
-
     // =================================================
-    // ERROR
+    // ERROR HANDLING
     // =================================================
 
     console.error("");
