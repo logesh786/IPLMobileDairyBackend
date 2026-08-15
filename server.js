@@ -5,10 +5,18 @@ require("dotenv").config();
 const { getPool } = require("./db");
 
 const authRoutes = require("./routes/auth");
-const companyRoutes = require("./routes/company");
 const purchaseRoutes = require("./routes/purchase");
 
 const app = express();
+
+// =====================================================
+// DEBUG ROUTE TYPES
+// =====================================================
+
+console.log("======================================");
+console.log("AUTH ROUTES TYPE:", typeof authRoutes);
+console.log("PURCHASE ROUTES TYPE:", typeof purchaseRoutes);
+console.log("======================================");
 
 // =====================================================
 // CORS
@@ -33,7 +41,7 @@ app.use(
 );
 
 // =====================================================
-// BODY PARSER
+// JSON
 // =====================================================
 
 app.use(express.json());
@@ -43,11 +51,10 @@ app.use(express.json());
 // =====================================================
 
 app.use("/api", authRoutes);
-app.use("/api", companyRoutes);
 app.use("/api", purchaseRoutes);
 
 // =====================================================
-// ROOT TEST
+// ROOT
 // =====================================================
 
 app.get("/", (req, res) => {
@@ -62,9 +69,7 @@ app.get("/", (req, res) => {
 // =====================================================
 
 app.use((req, res) => {
-  console.log(
-    `404: ${req.method} ${req.originalUrl}`
-  );
+  console.log(`404 - ${req.method} ${req.originalUrl}`);
 
   res.status(404).json({
     success: false,
@@ -73,52 +78,36 @@ app.use((req, res) => {
 });
 
 // =====================================================
-// ERROR HANDLER
+// ERROR
 // =====================================================
 
 app.use((err, req, res, next) => {
-  console.error("======================================");
-  console.error("SERVER ERROR");
-  console.error(err);
-  console.error("======================================");
+  console.error("SERVER ERROR:", err);
 
   res.status(500).json({
     success: false,
-    message:
-      err.message || "Internal server error.",
+    message: err.message || "Internal server error",
   });
 });
-
-// =====================================================
-// PORT
-// =====================================================
-
-const PORT = process.env.PORT || 5000;
 
 // =====================================================
 // START SERVER
 // =====================================================
 
+const PORT = process.env.PORT || 5000;
+
 async function startServer() {
   try {
     await getPool();
 
-    console.log(
-      "✅ Connected to SQL Server"
-    );
+    console.log("✅ Connected to SQL Server");
 
     app.listen(PORT, () => {
-      console.log(
-        `🚀 Server running on port ${PORT}`
-      );
+      console.log(`🚀 Server running on port ${PORT}`);
     });
 
   } catch (error) {
-    console.error(
-      "❌ Server startup error:",
-      error
-    );
-
+    console.error("❌ Server startup error:", error);
     process.exit(1);
   }
 }
