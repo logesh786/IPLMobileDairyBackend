@@ -925,274 +925,35 @@
 // // ======================================================
 // module.exports = router;
 const express = require("express");
-const router = express.Router();
-const sql = require("mssql");
-const { getPool } = require("../db");
+const cors = require("cors");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
 
 // =====================================================
-// NORMALIZE ROLE
+// AUTH ROUTES
 // =====================================================
-const normalizeRole = (value) => {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-};
+const authRoutes = require("./routes/auth");
+
+app.use("/api", authRoutes);
 
 // =====================================================
-// LOGIN
+// TEST
 // =====================================================
-router.post("/login", async (req, res) => {
-  try {
-    const {
-      userTypeId,
-      userName,
-      password,
-    } = req.body;
-
-    // =================================================
-    // VALIDATION
-    // =================================================
-
-    if (!userTypeId) {
-      return res.status(400).json({
-        message: "User type is required",
-      });
-    }
-
-    if (!userName) {
-      return res.status(400).json({
-        message: "Username is required",
-      });
-    }
-
-    if (!password) {
-      return res.status(400).json({
-        message: "Password is required",
-      });
-    }
-
-    const pool = await getPool();
-
-    // =================================================
-    // GET USER + USER TYPE + COMPANY
-    // =================================================
-
-    const result = await pool
-      .request()
-
-      .input(
-        "UserName",
-        sql.VarChar,
-        String(userName).trim()
-      )
-
-      .input(
-        "UserTypeCode",
-        sql.Int,
-        Number(userTypeId)
-      )
-
-      .query(`
-        SELECT TOP 1
-
-          u.UserCode,
-          u.UserName,
-          u.Password,
-          u.UserTypeCode,
-          u.CompanyCode,
-          u.MemberNumber,
-          u.RegisteredMobileNumber,
-
-          t.UserTypeName,
-
-          c.EDNO,
-
-          LTRIM(
-            RTRIM(
-              ISNULL(c.Header1, '')
-            ) +
-            CASE
-              WHEN
-                LTRIM(RTRIM(ISNULL(c.Header2, ''))) <> ''
-              THEN
-                ' ' +
-                LTRIM(RTRIM(ISNULL(c.Header2, '')))
-              ELSE
-                ''
-            END
-          ) AS CompanyName
-
-        FROM tbl_User u
-
-        LEFT JOIN tbl_UserType t
-          ON t.UserTypeCode =
-             u.UserTypeCode
-
-        LEFT JOIN tbl_Company c
-          ON c.CompanyCode =
-             u.CompanyCode
-
-        WHERE
-          LTRIM(RTRIM(u.UserName)) =
-          LTRIM(RTRIM(@UserName))
-
-          AND u.UserTypeCode =
-              @UserTypeCode
-      `);
-
-    // =================================================
-    // USER NOT FOUND
-    // =================================================
-
-    if (
-      !result.recordset ||
-      result.recordset.length === 0
-    ) {
-      return res.status(401).json({
-        message:
-          "Invalid username, password or user type",
-      });
-    }
-
-    const row =
-      result.recordset[0];
-
-    // =================================================
-    // PASSWORD CHECK
-    // =================================================
-
-    if (
-      String(row.Password) !==
-      String(password)
-    ) {
-      return res.status(401).json({
-        message:
-          "Invalid username, password or user type",
-      });
-    }
-
-    // =================================================
-    // ROLE
-    // =================================================
-
-    const role =
-      normalizeRole(
-        row.UserTypeName
-      );
-
-    // =================================================
-    // COMPANY NAME
-    // =================================================
-
-    const companyName =
-      String(
-        row.CompanyName || ""
-      ).trim();
-
-    // =================================================
-    // DEBUG
-    // =================================================
-
-    console.log(
-      "======================================"
-    );
-
-    console.log(
-      "LOGIN SUCCESS"
-    );
-
-    console.log(
-      "UserCode:",
-      row.UserCode
-    );
-
-    console.log(
-      "UserName:",
-      row.UserName
-    );
-
-    console.log(
-      "UserTypeCode:",
-      row.UserTypeCode
-    );
-
-    console.log(
-      "UserTypeName:",
-      row.UserTypeName
-    );
-
-    console.log(
-      "CompanyCode:",
-      row.CompanyCode
-    );
-
-    console.log(
-      "CompanyName:",
-      companyName
-    );
-
-    console.log(
-      "MemberNumber:",
-      row.MemberNumber
-    );
-
-    console.log(
-      "======================================"
-    );
-
-    // =================================================
-    // RETURN USER
-    // =================================================
-
-    return res.status(200).json({
-
-      message: "Login successful",
-
-      user: {
-
-        userCode:
-          row.UserCode,
-
-        userName:
-          row.UserName,
-
-        userTypeCode:
-          row.UserTypeCode,
-
-        userTypeName:
-          row.UserTypeName,
-
-        companyCode:
-          row.CompanyCode,
-
-        // IMPORTANT
-        // This is what DashboardHome.jsx uses
-        companyName:
-          companyName,
-
-        memberNumber:
-          row.MemberNumber,
-
-        registeredMobileNumber:
-          row.RegisteredMobileNumber,
-      },
-
-    });
-
-  } catch (error) {
-
-    console.error(
-      "LOGIN ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      message:
-        "Server error during login",
-      error:
-        error.message,
-    });
-  }
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "Mobile Dairy Backend Running",
+  });
 });
 
-module.exports = router;
+// =====================================================
+// PORT
+// =====================================================
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
