@@ -9,7 +9,6 @@ const { getPool } = require("../db");
 // =====================================================
 
 const SECRETARY_USER_TYPE_CODE = 2;
-
 const DEFAULT_LOOKBACK_DAYS = 31;
 
 // =====================================================
@@ -110,13 +109,14 @@ async function getLoggedUser(pool, userCode) {
 // =====================================================
 // GET PURCHASE COMPANIES
 //
-// ADMIN
-// MANAGER
-// SECRETARY
+// ADMIN / MANAGER
 //     -> ALL SOCIETIES
 //
+// SECRETARY
+//     -> ONLY REGISTERED SOCIETY
+//
 // NORMAL MEMBER
-//     -> ONLY OWN SOCIETY
+//     -> ONLY REGISTERED SOCIETY
 // =====================================================
 
 router.get(
@@ -198,16 +198,17 @@ router.get(
       // =================================================
       // IMPORTANT
       //
-      // SECRETARY NOW HAS ALL SOCIETY ACCESS
+      // ONLY ADMIN / MANAGER HAVE ALL SOCIETY ACCESS
+      //
+      // SECRETARY DOES NOT HAVE ALL SOCIETY ACCESS
       // =================================================
 
       const canViewAllSocieties =
         isAdmin ||
-        isManager ||
-        isSecretary;
+        isManager;
 
       // =================================================
-      // QUERY
+      // WHERE
       // =================================================
 
       const request = pool.request();
@@ -215,16 +216,18 @@ router.get(
       let where = `
         WHERE
           LEN(ISNULL(c.MobileNo, '')) = 10
+
           AND c.EDNO > 0
       `;
 
       // =================================================
-      // NORMAL MEMBER
+      // SECRETARY / NORMAL MEMBER
       //
-      // ONLY NORMAL MEMBER IS RESTRICTED
+      // FORCE REGISTERED SOCIETY
       // =================================================
 
       if (!canViewAllSocieties) {
+
         if (
           user.CompanyCode === null ||
           user.CompanyCode === undefined ||
@@ -233,7 +236,7 @@ router.get(
           return res.status(400).json({
             success: false,
             message:
-              "Member has no registered society.",
+              "User has no registered society.",
           });
         }
 
@@ -250,20 +253,16 @@ router.get(
       }
 
       // =================================================
-      // FETCH
+      // FETCH SOCIETY
       // =================================================
 
       const result = await request.query(`
         SELECT
 
           c.CompanyCode,
-
           c.EDNO,
-
           c.Header1,
-
           c.Header2,
-
           c.MobileNo
 
         FROM tbl_Company c
@@ -297,6 +296,7 @@ router.get(
       // =================================================
 
       return res.status(200).json({
+
         success: true,
 
         isSecretary,
@@ -333,14 +333,18 @@ router.get(
 // =====================================================
 // GET PURCHASES
 //
-// ADMIN / MANAGER / SECRETARY
+// ADMIN / MANAGER
 //     -> ALL SOCIETIES
-//     -> OPTIONAL SOCIETY FILTER
-//     -> OPTIONAL MEMBER FILTER
+//     -> OPTIONAL SOCIETY
+//     -> OPTIONAL MEMBER
+//
+// SECRETARY
+//     -> ONLY REGISTERED SOCIETY
+//     -> OPTIONAL MEMBER
 //
 // NORMAL MEMBER
-//     -> OWN SOCIETY
-//     -> OWN MEMBER
+//     -> ONLY REGISTERED SOCIETY
+//     -> ONLY REGISTERED MEMBER
 // =====================================================
 
 router.get(
@@ -454,21 +458,21 @@ router.get(
         role === "manager";
 
       // =================================================
-      // ALL SOCIETY ACCESS
+      // ACCESS
       //
-      // SECRETARY INCLUDED
+      // ONLY ADMIN / MANAGER:
+      // ALL SOCIETIES
+      //
+      // SECRETARY:
+      // OWN SOCIETY ONLY
+      //
+      // MEMBER:
+      // OWN SOCIETY ONLY
       // =================================================
 
       const canViewAllSocieties =
         isAdmin ||
-        isManager ||
-        isSecretary;
-
-      // =================================================
-      // ALL MEMBER ACCESS
-      //
-      // SECRETARY INCLUDED
-      // =================================================
+        isManager;
 
       const canViewAllMembers =
         isAdmin ||
@@ -483,25 +487,23 @@ router.get(
         pool.request();
 
       // =================================================
-      // COMPANY FILTER
+      // COMPANY
       // =================================================
 
-      let selectedCompanyCode =
-        null;
+      let selectedCompanyCode = null;
 
-      if (canViewAllSocieties) {
+      // =================================================
+      // ADMIN / MANAGER
+      //
+      // They can select any society.
+      //
+      // No companyCode = ALL societies.
+      // =================================================
 
-        // -----------------------------------------------
-        // Admin / Manager / Secretary
-        //
-        // companyCode is OPTIONAL
-        //
-        // If companyCode supplied:
-        //     show selected society
-        //
-        // If companyCode not supplied:
-        //     show ALL societies
-        // -----------------------------------------------
+      if (
+        isAdmin ||
+        isManager
+      ) {
 
         if (hasValue(companyCode)) {
 
@@ -527,17 +529,67 @@ router.get(
             selectedCompanyCode
           );
         }
+      }
 
-      } else {
+      // =================================================
+      // SECRETARY
+      //
+      // IMPORTANT:
+      //
+      // NEVER USE FRONTEND companyCode.
+      //
+      // ALWAYS USE:
+      // me.CompanyCode
+      //
+      // Therefore Secretary can ONLY
+      // see registered society.
+      // =================================================
 
-        // -----------------------------------------------
-        // NORMAL MEMBER
-        //
-        // FORCE OWN SOCIETY
-        // -----------------------------------------------
+      else if (isSecretary) {
 
         selectedCompanyCode =
-          Number(me.CompanyCode);
+          Number(
+            me.CompanyCode
+          );
+
+        if (
+          !Number.isInteger(
+            selectedCompanyCode
+          ) ||
+          selectedCompanyCode <= 0
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Secretary has no registered society.",
+          });
+        }
+
+        request.input(
+          "CompanyCode",
+          sql.Int,
+          selectedCompanyCode
+        );
+
+        console.log(
+          "SECRETARY REGISTERED COMPANY:",
+          selectedCompanyCode
+        );
+
+        // IMPORTANT:
+        // Frontend companyCode is ignored.
+      }
+
+      // =================================================
+      // NORMAL MEMBER
+      // =================================================
+
+      else {
+
+        selectedCompanyCode =
+          Number(
+            me.CompanyCode
+          );
 
         if (
           !Number.isInteger(
@@ -563,16 +615,19 @@ router.get(
       // MEMBER FILTER
       // =================================================
 
-      let selectedMemberNumber =
-        null;
+      let selectedMemberNumber = null;
+
+      // =================================================
+      // ADMIN / MANAGER / SECRETARY
+      //
+      // OPTIONAL MEMBER
+      // =================================================
 
       if (canViewAllMembers) {
 
-        // -----------------------------------------------
-        // OPTIONAL MEMBER FILTER
-        // -----------------------------------------------
-
-        if (hasValue(memberNumber)) {
+        if (
+          hasValue(memberNumber)
+        ) {
 
           selectedMemberNumber =
             String(
@@ -585,13 +640,15 @@ router.get(
             selectedMemberNumber
           );
         }
+      }
 
-      } else {
+      // =================================================
+      // NORMAL MEMBER
+      //
+      // FORCE REGISTERED MEMBER
+      // =================================================
 
-        // -----------------------------------------------
-        // NORMAL MEMBER
-        // FORCE REGISTERED MEMBER
-        // -----------------------------------------------
+      else {
 
         if (
           !hasValue(
@@ -618,7 +675,7 @@ router.get(
       }
 
       // =================================================
-      // DATES
+      // DATE
       // =================================================
 
       const effectiveFromDate =
@@ -716,29 +773,27 @@ router.get(
 
       let where = `
         WHERE
+
           p.PurchaseDate >= @FromDate
 
-          AND p.PurchaseDate <
-              DATEADD(
-                DAY,
-                1,
-                @ToDate
-              )
+          AND p.PurchaseDate < DATEADD(
+            DAY,
+            1,
+            @ToDate
+          )
       `;
 
       // =================================================
       // COMPANY FILTER
-      //
-      // IMPORTANT:
-      //
-      // If companyCode is NOT supplied for
-      // Secretary/Admin/Manager,
-      // NO company condition is added.
-      //
-      // Therefore ALL societies are returned.
       // =================================================
 
-      if (canViewAllSocieties) {
+      if (
+        isAdmin ||
+        isManager
+      ) {
+
+        // Admin / Manager
+        // Company optional
 
         if (
           selectedCompanyCode !== null
@@ -752,6 +807,10 @@ router.get(
 
       } else {
 
+        // Secretary / Member
+        //
+        // ALWAYS registered company
+
         where += `
           AND p.CompanyCode =
               @CompanyCode
@@ -760,15 +819,6 @@ router.get(
 
       // =================================================
       // MEMBER FILTER
-      //
-      // IMPORTANT:
-      //
-      // Uses p.Number
-      //
-      // This matches your original SQL:
-      //
-      // tbl_purchase.number =
-      // ISNULL(@MemberNumber,tbl_purchase.Number)
       // =================================================
 
       if (
@@ -776,8 +826,15 @@ router.get(
       ) {
 
         where += `
-          AND p.Number =
-              @MemberNumber
+          AND LTRIM(RTRIM(
+            CONVERT(
+              varchar(50),
+              p.Number
+            )
+          )) =
+          LTRIM(RTRIM(
+            @MemberNumber
+          ))
         `;
       }
 
@@ -838,7 +895,7 @@ router.get(
 
           FROM tbl_Purchase p
 
-          LEFT OUTER JOIN tbl_Member m
+          LEFT JOIN tbl_Member m
 
             ON
               p.MemberCode =
