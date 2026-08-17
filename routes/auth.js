@@ -24,17 +24,19 @@ router.get("/usertypes", async (req, res) => {
 
     console.log("USER TYPES:", result.recordset);
 
-    res.status(200).json(result.recordset);
+    return res.status(200).json(result.recordset);
+
   } catch (error) {
     console.error("GET /api/usertypes ERROR:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to load user types",
       error: error.message,
     });
   }
 });
+
 
 // =====================================================
 // GET COMPANIES / SOCIETIES
@@ -71,11 +73,12 @@ router.get("/Company", async (req, res) => {
 
     console.log("COMPANIES:", companies.length);
 
-    res.status(200).json(companies);
+    return res.status(200).json(companies);
+
   } catch (error) {
     console.error("GET /api/Company ERROR:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to load companies",
       error: error.message,
@@ -83,41 +86,87 @@ router.get("/Company", async (req, res) => {
   }
 });
 
+
 // =====================================================
 // LOGIN
 // POST /api/login
+//
+// Frontend sends:
+//
+// {
+//   userTypeId: "...",
+//   userName: "...",
+//   password: "..."
+// }
+//
+// Database:
+//
+// tbl_User.UserTypeCode
+// tbl_User.UserName
+// tbl_User.Password
 // =====================================================
 
 router.post("/login", async (req, res) => {
   try {
     console.log("======================================");
     console.log("POST /api/login");
-    console.log("LOGIN REQUEST:", req.body);
+    console.log("LOGIN REQUEST:", {
+      userTypeId: req.body?.userTypeId,
+      userName: req.body?.userName,
+      passwordProvided:
+        req.body?.password !== undefined &&
+        req.body?.password !== null &&
+        String(req.body.password).length > 0,
+    });
     console.log("======================================");
 
-    const {
-      userCode,
-      password,
-      userTypeCode,
-      companyCode,
-      memberNumber,
-      registeredMobileNumber,
-    } = req.body;
 
     // =================================================
-    // VALIDATION
+    // READ REQUEST DATA
+    // =================================================
+
+    const {
+      userTypeId,
+      userName,
+      password,
+    } = req.body;
+
+
+    // =================================================
+    // VALIDATE USER TYPE
     // =================================================
 
     if (
-      userCode === undefined ||
-      userCode === null ||
-      String(userCode).trim() === ""
+      userTypeId === undefined ||
+      userTypeId === null ||
+      String(userTypeId).trim() === ""
     ) {
       return res.status(400).json({
         success: false,
-        message: "User code is required",
+        message: "User type is required",
       });
     }
+
+
+    // =================================================
+    // VALIDATE USERNAME
+    // =================================================
+
+    if (
+      userName === undefined ||
+      userName === null ||
+      String(userName).trim() === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Username is required",
+      });
+    }
+
+
+    // =================================================
+    // VALIDATE PASSWORD
+    // =================================================
 
     if (
       password === undefined ||
@@ -130,16 +179,49 @@ router.post("/login", async (req, res) => {
       });
     }
 
+
     // =================================================
-    // DATABASE
+    // VALIDATE USER TYPE NUMBER
+    // =================================================
+
+    const parsedUserTypeCode = Number(userTypeId);
+
+    if (!Number.isInteger(parsedUserTypeCode)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user type",
+      });
+    }
+
+
+    // =================================================
+    // DATABASE CONNECTION
     // =================================================
 
     const pool = await getPool();
 
     const request = pool.request();
 
-    request.input("UserCode", String(userCode).trim());
-    request.input("Password", String(password));
+
+    // =================================================
+    // SQL PARAMETERS
+    // =================================================
+
+    request.input(
+      "UserName",
+      String(userName).trim()
+    );
+
+    request.input(
+      "Password",
+      String(password)
+    );
+
+    request.input(
+      "UserTypeCode",
+      parsedUserTypeCode
+    );
+
 
     // =================================================
     // LOGIN QUERY
@@ -150,7 +232,6 @@ router.post("/login", async (req, res) => {
         U.UserCode,
         U.UserTypeCode,
         U.UserName,
-        U.Password,
         U.RegisteredMobileNumber,
         U.MemberNumber,
         U.CompanyCode,
@@ -161,134 +242,127 @@ router.post("/login", async (req, res) => {
         C.Header2,
         C.MobileNo
 
-      FROM tbl_User U
+      FROM tbl_User AS U
 
-      LEFT JOIN tbl_UserType UT
+      LEFT JOIN tbl_UserType AS UT
         ON U.UserTypeCode = UT.UserTypeCode
 
-      LEFT JOIN tbl_Company C
+      LEFT JOIN tbl_Company AS C
         ON U.CompanyCode = C.CompanyCode
 
       WHERE
-        U.UserCode = TRY_CONVERT(INT, @UserCode)
+        U.UserName = @UserName
         AND U.Password = @Password
+        AND U.UserTypeCode = @UserTypeCode
     `);
 
+
     // =================================================
-    // USER NOT FOUND
+    // NO USER FOUND
     // =================================================
 
     if (result.recordset.length === 0) {
-      console.log("LOGIN FAILED: Invalid credentials");
+      console.log("======================================");
+      console.log("LOGIN FAILED");
+      console.log("Reason: Invalid username/password/user type");
+      console.log("Username:", userName);
+      console.log("UserTypeCode:", parsedUserTypeCode);
+      console.log("======================================");
 
       return res.status(401).json({
         success: false,
-        message: "Invalid user code or password",
+        message: "Invalid username, password, or user type",
       });
     }
+
+
+    // =================================================
+    // USER FOUND
+    // =================================================
 
     const row = result.recordset[0];
 
-    // =================================================
-    // OPTIONAL VALIDATION
-    // =================================================
-
-    if (
-      userTypeCode !== undefined &&
-      userTypeCode !== null &&
-      String(userTypeCode).trim() !== "" &&
-      Number(userTypeCode) !== Number(row.UserTypeCode)
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid user type",
-      });
-    }
-
-    if (
-      companyCode !== undefined &&
-      companyCode !== null &&
-      String(companyCode).trim() !== "" &&
-      Number(companyCode) !== Number(row.CompanyCode)
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid company",
-      });
-    }
-
-    if (
-      memberNumber !== undefined &&
-      memberNumber !== null &&
-      String(memberNumber).trim() !== "" &&
-      String(memberNumber).trim() !== String(row.MemberNumber || "").trim()
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid member number",
-      });
-    }
-
-    if (
-      registeredMobileNumber !== undefined &&
-      registeredMobileNumber !== null &&
-      String(registeredMobileNumber).trim() !== "" &&
-      String(registeredMobileNumber).trim() !==
-        String(row.RegisteredMobileNumber || "").trim()
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid registered mobile number",
-      });
-    }
 
     // =================================================
-    // BUILD USER RESPONSE
+    // BUILD COMPANY NAME
+    // =================================================
+
+    const companyName =
+      `${row.Header1 || ""} ${row.Header2 || ""}`.trim();
+
+
+    // =================================================
+    // BUILD USER OBJECT
     // =================================================
 
     const user = {
       userCode: row.UserCode,
+
       userName: row.UserName,
 
       userTypeCode: row.UserTypeCode,
-      userTypeName: row.UserTypeName || "",
 
-      companyCode: row.CompanyCode,
+      userTypeName:
+        row.UserTypeName || "",
+
+      companyCode:
+        row.CompanyCode,
 
       companyName:
-        `${row.Header1 || ""} ${row.Header2 || ""}`.trim(),
+        companyName,
 
-      memberNumber: row.MemberNumber || "",
+      memberNumber:
+        row.MemberNumber || "",
 
       registeredMobileNumber:
         row.RegisteredMobileNumber || "",
     };
 
-    // =================================================
-    // SUCCESS
-    // =================================================
 
-    console.log("LOGIN SUCCESS:");
-    console.log({
-      userCode: user.userCode,
-      userName: user.userName,
-      userTypeCode: user.userTypeCode,
-      companyCode: user.companyCode,
-      memberNumber: user.memberNumber,
-    });
+    // =================================================
+    // LOGIN SUCCESS LOG
+    // =================================================
 
     console.log("======================================");
+    console.log("LOGIN SUCCESS");
+    console.log("======================================");
+
+    console.log("UserCode:", user.userCode);
+    console.log("UserName:", user.userName);
+    console.log("UserTypeCode:", user.userTypeCode);
+    console.log("UserTypeName:", user.userTypeName);
+    console.log("CompanyCode:", user.companyCode);
+    console.log("CompanyName:", user.companyName);
+    console.log("MemberNumber:", user.memberNumber);
+
+    console.log("======================================");
+
+
+    // =================================================
+    // SEND RESPONSE
+    // =================================================
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      user,
+      user: user,
     });
+
+
   } catch (error) {
+
+    // =================================================
+    // SERVER ERROR
+    // =================================================
+
     console.error("======================================");
-    console.error("POST /api/login ERROR:");
+    console.error("POST /api/login ERROR");
+    console.error("======================================");
+
     console.error(error);
+
     console.error("======================================");
+
 
     return res.status(500).json({
       success: false,
@@ -298,8 +372,9 @@ router.post("/login", async (req, res) => {
   }
 });
 
+
 // =====================================================
-// EXPORT
+// EXPORT ROUTER
 // =====================================================
 
 module.exports = router;
