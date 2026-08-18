@@ -1,15 +1,17 @@
+// =====================================================
+// MOBILE DAIRY BACKEND SERVER
+// =====================================================
+
 const express = require("express");
 const cors = require("cors");
-const sql = require("mssql");
 
 const { getPool } = require("./db");
-const registerRouter = require("./routes/register");
+
+// =====================================================
+// EXPRESS APP
+// =====================================================
 
 const app = express();
-
-// =====================================================
-// PORT
-// =====================================================
 
 const PORT = process.env.PORT || 5000;
 
@@ -17,15 +19,44 @@ const PORT = process.env.PORT || 5000;
 // MIDDLEWARE
 // =====================================================
 
+app.use(cors());
+
+app.use(express.json());
+
 app.use(
-  cors({
-    origin: true,
-    credentials: true,
+  express.urlencoded({
+    extended: true,
   })
 );
 
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true }));
+// =====================================================
+// ROUTES
+// =====================================================
+
+const authRoutes = require("./routes/auth");
+const registerRoutes = require("./routes/register");
+const purchaseRoutes = require("./routes/purchase");
+
+// =====================================================
+// API ROUTES
+// =====================================================
+
+// Authentication
+app.use("/api", authRoutes);
+
+// Registration
+app.use("/api", registerRoutes);
+
+// Purchase
+//
+// IMPORTANT:
+// purchase.js contains:
+//
+// router.get("/purchases")
+// router.get("/purchase-companies")
+//
+// Therefore mount it on /api.
+app.use("/api", purchaseRoutes);
 
 // =====================================================
 // HELPERS
@@ -73,6 +104,7 @@ app.get("/api/register", (req, res) => {
 
 // =====================================================
 // GET USER TYPES
+//
 // GET /api/usertypes
 // =====================================================
 
@@ -117,6 +149,7 @@ app.get("/api/usertypes", async (req, res) => {
 
 // =====================================================
 // GET COMPANIES / SOCIETIES
+//
 // GET /api/Company
 // =====================================================
 
@@ -138,7 +171,7 @@ app.get("/api/Company", async (req, res) => {
       FROM tbl_Company
       WHERE
         LEN(ISNULL(MobileNo, '')) = 10
-        AND EDNO > 0
+        AND ISNULL(EDNO, 0) > 0
       ORDER BY CompanyCode
     `);
 
@@ -183,30 +216,8 @@ app.get("/api/Company", async (req, res) => {
 });
 
 // =====================================================
-// REGISTER
-//
-// IMPORTANT
-//
-// This MUST be:
-//
-// app.use("/api/register", registerRouter);
-//
-// because register.js contains:
-//
-// router.post("/", ...)
-//
-// Therefore final URL:
-//
-// POST /api/register
-// =====================================================
-
-app.use(
-  "/api/register",
-  registerRouter
-);
-
-// =====================================================
 // LOGIN
+//
 // POST /api/login
 // =====================================================
 
@@ -268,18 +279,14 @@ app.post("/api/login", async (req, res) => {
       });
     }
 
-    if (
-      !hasValue(finalUserName)
-    ) {
+    if (!hasValue(finalUserName)) {
       return res.status(400).json({
         success: false,
         message: "Username is required",
       });
     }
 
-    if (
-      !hasValue(finalPassword)
-    ) {
+    if (!hasValue(finalPassword)) {
       return res.status(400).json({
         success: false,
         message: "Password is required",
@@ -424,28 +431,42 @@ app.post("/api/login", async (req, res) => {
 
     console.log("======================================");
     console.log("LOGIN SUCCESS");
-    console.log("UserCode:", user.userCode);
-    console.log("UserName:", user.userName);
+
+    console.log(
+      "UserCode:",
+      user.userCode
+    );
+
+    console.log(
+      "UserName:",
+      user.userName
+    );
+
     console.log(
       "UserTypeCode:",
       user.userTypeCode
     );
+
     console.log(
       "UserType:",
       user.userTypeName
     );
+
     console.log(
       "CompanyCode:",
       user.companyCode
     );
+
     console.log(
       "CompanyName:",
       user.companyName
     );
+
     console.log(
       "MemberNumber:",
       user.memberNumber
     );
+
     console.log("======================================");
 
     return res.status(200).json({
@@ -476,10 +497,12 @@ app.post("/api/login", async (req, res) => {
 app.use((req, res) => {
   console.log("======================================");
   console.log("404 ROUTE NOT FOUND");
+
   console.log(
     req.method,
     req.originalUrl
   );
+
   console.log("======================================");
 
   return res.status(404).json({
@@ -525,12 +548,23 @@ app.listen(
     console.log(
       `http://localhost:${PORT}`
     );
+
     console.log(
-      `REGISTER: POST /api/register`
+      "REGISTER: POST /api/register"
     );
+
     console.log(
-      `LOGIN: POST /api/login`
+      "LOGIN: POST /api/login"
     );
+
+    console.log(
+      "PURCHASES: GET /api/purchases"
+    );
+
+    console.log(
+      "PURCHASE COMPANIES: GET /api/purchase-companies"
+    );
+
     console.log("======================================");
   }
 );
