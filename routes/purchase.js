@@ -5,7 +5,6 @@
 
 const express = require("express");
 const sql = require("mssql");
-
 const { getPool } = require("../db");
 
 const router = express.Router();
@@ -44,52 +43,36 @@ const parseNumber = (value) => {
 
   const number = Number(value);
 
-  return Number.isFinite(number)
-    ? number
-    : null;
+  return Number.isFinite(number) ? number : null;
 };
 
 // =====================================================
 // GET USER DETAILS
 // =====================================================
 
-const getUserDetails = async (
-  pool,
-  userCode
-) => {
-  const result =
-    await pool
-      .request()
-      .input(
-        "userCode",
-        sql.Int,
-        Number(userCode)
-      )
-      .query(`
-        SELECT TOP 1
+const getUserDetails = async (pool, userCode) => {
+  const result = await pool
+    .request()
+    .input(
+      "userCode",
+      sql.Int,
+      Number(userCode)
+    )
+    .query(`
+      SELECT TOP 1
+        U.UserCode,
+        U.UserName,
+        U.UserTypeCode,
+        U.CompanyCode,
+        U.MemberNumber,
+        UT.UserTypeName
+      FROM tbl_User AS U
+      LEFT JOIN tbl_UserType AS UT
+        ON UT.UserTypeCode = U.UserTypeCode
+      WHERE U.UserCode = @userCode
+    `);
 
-          u.UserCode,
-          u.UserName,
-          u.UserTypeCode,
-          u.CompanyCode,
-          u.MemberNumber,
-
-          ut.UserTypeName
-
-        FROM tbl_User u
-
-        LEFT JOIN tbl_UserType ut
-          ON ut.UserTypeCode =
-             u.UserTypeCode
-
-        WHERE
-          u.UserCode = @userCode
-      `);
-
-  return (
-    result.recordset[0] ||
-    null
-  );
+  return result.recordset[0] || null;
 };
 
 // =====================================================
@@ -105,41 +88,36 @@ const getCompanyName = async (
   }
 
   try {
-    const result =
-      await pool
-        .request()
-        .input(
-          "companyCode",
-          sql.Int,
-          Number(companyCode)
-        )
-        .query(`
-          SELECT TOP 1
+    const result = await pool
+      .request()
+      .input(
+        "companyCode",
+        sql.Int,
+        Number(companyCode)
+      )
+      .query(`
+        SELECT TOP 1
 
-            LTRIM(RTRIM(
-              ISNULL(Header1, '') +
+          CompanyCode,
 
-              CASE
-                WHEN
-                  ISNULL(Header1, '') <> ''
-                  AND
-                  ISNULL(Header2, '') <> ''
-                THEN ' '
-                ELSE ''
-              END +
+          LTRIM(RTRIM(
+            ISNULL(Header1, '') +
+            CASE
+              WHEN ISNULL(Header1, '') <> ''
+               AND ISNULL(Header2, '') <> ''
+              THEN ' '
+              ELSE ''
+            END +
+            ISNULL(Header2, '')
+          )) AS CompanyName
 
-              ISNULL(Header2, '')
-            )) AS CompanyName
+        FROM tbl_Company
 
-          FROM tbl_Company
-
-          WHERE
-            CompanyCode = @companyCode
-        `);
+        WHERE CompanyCode = @companyCode
+      `);
 
     return (
-      result.recordset[0]
-        ?.CompanyName || ""
+      result.recordset[0]?.CompanyName || ""
     );
   } catch (error) {
     console.error(
@@ -161,12 +139,13 @@ router.get(
   "/purchase-companies",
   async (req, res) => {
     try {
-      const userCode =
-        parseNumber(
-          req.query.userCode
-        );
+      const userCode = parseNumber(
+        req.query.userCode
+      );
 
-      console.log("======================================");
+      console.log(
+        "======================================"
+      );
       console.log(
         "GET PURCHASE COMPANIES"
       );
@@ -174,18 +153,18 @@ router.get(
         "USER CODE:",
         userCode
       );
-      console.log("======================================");
+      console.log(
+        "======================================"
+      );
 
       if (!userCode) {
         return res.status(400).json({
           success: false,
-          message:
-            "userCode is required",
+          message: "userCode is required",
         });
       }
 
-      const pool =
-        await getPool();
+      const pool = await getPool();
 
       const user =
         await getUserDetails(
@@ -196,24 +175,16 @@ router.get(
       if (!user) {
         return res.status(404).json({
           success: false,
-          message:
-            "User not found",
+          message: "User not found",
         });
       }
 
-      const role =
-        normalizeRole(
-          user.UserTypeName
-        );
+      const role = normalizeRole(
+        user.UserTypeName
+      );
 
       const userTypeCode =
-        Number(
-          user.UserTypeCode
-        );
-
-      // =================================================
-      // ROLE
-      // =================================================
+        Number(user.UserTypeCode);
 
       const isAdmin =
         role === "admin" ||
@@ -235,87 +206,63 @@ router.get(
         userTypeCode === 3;
 
       const canViewAll =
-        isAdmin ||
-        isManager;
+        isAdmin || isManager;
 
       let result;
 
       // =================================================
       // ADMIN / MANAGER
+      // ALL SOCIETIES
       // =================================================
 
       if (canViewAll) {
         result =
-          await pool
-            .request()
-            .query(`
-              SELECT
+          await pool.request().query(`
+            SELECT
+              CompanyCode,
+              EDNO,
 
-                CompanyCode,
-                EDNO,
+              LTRIM(RTRIM(
+                ISNULL(Header1, '') +
+                CASE
+                  WHEN ISNULL(Header1, '') <> ''
+                   AND ISNULL(Header2, '') <> ''
+                  THEN ' '
+                  ELSE ''
+                END +
+                ISNULL(Header2, '')
+              )) AS CompanyName,
 
-                LTRIM(RTRIM(
-                  ISNULL(Header1, '') +
+              MobileNo
 
-                  CASE
-                    WHEN
-                      ISNULL(Header1, '') <> ''
-                      AND
-                      ISNULL(Header2, '') <> ''
-                    THEN ' '
-                    ELSE ''
-                  END +
+            FROM tbl_Company
 
-                  ISNULL(Header2, '')
-                )) AS CompanyName,
+            WHERE
+              ISNULL(EDNO, 0) > 0
+              AND LEN(
+                ISNULL(MobileNo, '')
+              ) = 10
 
-                MobileNo
-
-              FROM tbl_Company
-
-              WHERE
-                ISNULL(EDNO, 0) > 0
-
-              ORDER BY
-                CompanyName
-            `);
+            ORDER BY CompanyName
+          `);
       }
 
       // =================================================
-      // SECRETARY / MEMBER
+      // SECRETARY
       // OWN SOCIETY
       // =================================================
 
-      else if (
-        isSecretary ||
-        isMember
-      ) {
-        const companyCode =
-          parseNumber(
-            user.CompanyCode
-          );
-
-        if (!companyCode) {
+      else if (isSecretary) {
+        if (!hasValue(user.CompanyCode)) {
           return res.json({
             success: true,
-
-            role:
-              user.UserTypeName,
-
+            role: user.UserTypeName,
             fullAccess: false,
-
-            userCode:
-              user.UserCode,
-
-            userCompanyCode:
-              null,
-
             companies: [],
-
+            userCode: user.UserCode,
+            userCompanyCode: null,
             message:
-              isMember
-                ? "Member has no registered society."
-                : "Secretary has no registered society.",
+              "Secretary does not have a registered CompanyCode.",
           });
         }
 
@@ -325,26 +272,21 @@ router.get(
             .input(
               "companyCode",
               sql.Int,
-              companyCode
+              Number(user.CompanyCode)
             )
             .query(`
               SELECT
-
                 CompanyCode,
                 EDNO,
 
                 LTRIM(RTRIM(
                   ISNULL(Header1, '') +
-
                   CASE
-                    WHEN
-                      ISNULL(Header1, '') <> ''
-                      AND
-                      ISNULL(Header2, '') <> ''
+                    WHEN ISNULL(Header1, '') <> ''
+                     AND ISNULL(Header2, '') <> ''
                     THEN ' '
                     ELSE ''
                   END +
-
                   ISNULL(Header2, '')
                 )) AS CompanyName,
 
@@ -352,34 +294,73 @@ router.get(
 
               FROM tbl_Company
 
-              WHERE
-                CompanyCode = @companyCode
+              WHERE CompanyCode = @companyCode
+            `);
+      }
+
+      // =================================================
+      // MEMBER
+      // OWN SOCIETY
+      // =================================================
+
+      else if (isMember) {
+        if (!hasValue(user.CompanyCode)) {
+          return res.json({
+            success: true,
+            role: user.UserTypeName,
+            fullAccess: false,
+            companies: [],
+            userCode: user.UserCode,
+            userCompanyCode: null,
+          });
+        }
+
+        result =
+          await pool
+            .request()
+            .input(
+              "companyCode",
+              sql.Int,
+              Number(user.CompanyCode)
+            )
+            .query(`
+              SELECT
+                CompanyCode,
+                EDNO,
+
+                LTRIM(RTRIM(
+                  ISNULL(Header1, '') +
+                  CASE
+                    WHEN ISNULL(Header1, '') <> ''
+                     AND ISNULL(Header2, '') <> ''
+                    THEN ' '
+                    ELSE ''
+                  END +
+                  ISNULL(Header2, '')
+                )) AS CompanyName,
+
+                MobileNo
+
+              FROM tbl_Company
+
+              WHERE CompanyCode = @companyCode
             `);
       }
 
       else {
         return res.json({
           success: true,
-          role:
-            user.UserTypeName,
+          role: user.UserTypeName,
           fullAccess: false,
           companies: [],
+          userCode: user.UserCode,
+          userCompanyCode:
+            user.CompanyCode || null,
         });
       }
 
       const companies =
         result.recordset || [];
-
-      const userCompanyCode =
-        parseNumber(
-          user.CompanyCode
-        );
-
-      const userCompanyName =
-        await getCompanyName(
-          pool,
-          userCompanyCode
-        );
 
       return res.json({
         success: true,
@@ -387,39 +368,35 @@ router.get(
         role:
           user.UserTypeName,
 
-        userCode:
-          user.UserCode,
-
-        userCompanyCode,
-
-        userCompanyName,
-
         fullAccess:
           canViewAll,
 
-        canViewAllSocieties:
-          canViewAll,
+        userCode:
+          user.UserCode,
+
+        userCompanyCode:
+          user.CompanyCode,
+
+        userMemberNumber:
+          user.MemberNumber || null,
 
         companies,
       });
+
     } catch (error) {
       console.error(
         "======================================"
       );
-
       console.error(
-        "PURCHASE COMPANIES ERROR:"
+        "PURCHASE COMPANIES ERROR"
       );
-
       console.error(error);
-
       console.error(
         "======================================"
       );
 
       return res.status(500).json({
         success: false,
-
         message:
           error.message ||
           "Failed to load purchase companies.",
@@ -432,6 +409,17 @@ router.get(
 // GET PURCHASES
 //
 // GET /api/purchases
+//
+// Examples:
+//
+// /api/purchases?userCode=5
+//
+// /api/purchases?userCode=5&companyCode=10
+//
+// /api/purchases?userCode=5
+//   &fromDate=2026-08-01
+//   &toDate=2026-08-18
+//
 // =====================================================
 
 router.get(
@@ -439,7 +427,7 @@ router.get(
   async (req, res) => {
     try {
       // =================================================
-      // REQUEST PARAMETERS
+      // INPUT
       // =================================================
 
       const userCode =
@@ -480,7 +468,7 @@ router.get(
       }
 
       // =================================================
-      // NULL STRING
+      // NULL STRING CLEANUP
       // =================================================
 
       if (
@@ -496,6 +484,50 @@ router.get(
       ) {
         toDate = "";
       }
+
+      // =================================================
+      // DEFAULT DATE
+      //
+      // Last 31 days -> today
+      //
+      // -30 = today + previous 30 days
+      // =================================================
+
+      const useDefaultFromDate =
+        !fromDate;
+
+      const useDefaultToDate =
+        !toDate;
+
+      console.log(
+        "======================================"
+      );
+      console.log(
+        "GET PURCHASES"
+      );
+      console.log(
+        "USER CODE:",
+        userCode
+      );
+      console.log(
+        "REQUESTED COMPANY:",
+        requestedCompanyCode
+      );
+      console.log(
+        "REQUESTED MEMBER:",
+        requestedMemberNumber
+      );
+      console.log(
+        "FROM DATE:",
+        fromDate || "(default)"
+      );
+      console.log(
+        "TO DATE:",
+        toDate || "(default)"
+      );
+      console.log(
+        "======================================"
+      );
 
       // =================================================
       // DATABASE
@@ -556,15 +588,13 @@ router.get(
         userTypeCode === 3;
 
       const canViewAllSocieties =
-        isAdmin ||
-        isManager;
+        isAdmin || isManager;
 
       const canViewAllMembers =
-        isAdmin ||
-        isManager;
+        isAdmin || isManager;
 
       // =================================================
-      // REGISTERED COMPANY
+      // USER REGISTERED VALUES
       // =================================================
 
       const userCompanyCode =
@@ -577,8 +607,33 @@ router.get(
           user.MemberNumber
         );
 
+      console.log(
+        "USER:",
+        user
+      );
+
+      console.log(
+        "ROLE:",
+        role
+      );
+
+      console.log(
+        "USER TYPE CODE:",
+        userTypeCode
+      );
+
+      console.log(
+        "USER COMPANY CODE:",
+        userCompanyCode
+      );
+
+      console.log(
+        "USER MEMBER NUMBER:",
+        userMemberNumber
+      );
+
       // =================================================
-      // COMPANY ACCESS
+      // COMPANY FILTER
       // =================================================
 
       let finalCompanyCode =
@@ -586,10 +641,12 @@ router.get(
 
       if (canViewAllSocieties) {
         // Admin / Manager
+        // can select a company.
         finalCompanyCode =
           requestedCompanyCode;
       } else {
         // Secretary / Member
+        // ALWAYS their registered society.
         finalCompanyCode =
           userCompanyCode;
       }
@@ -602,7 +659,6 @@ router.get(
         if (!userCompanyCode) {
           return res.json({
             success: true,
-
             role:
               user.UserTypeName,
 
@@ -620,9 +676,9 @@ router.get(
 
             userCompanyCode: null,
 
-            userCompanyName: "",
-
-            userMemberNumber: null,
+            userMemberNumber:
+              userMemberNumber ||
+              null,
 
             message:
               "Secretary has no registered society.",
@@ -654,7 +710,6 @@ router.get(
         if (!userCompanyCode) {
           return res.json({
             success: true,
-
             role:
               user.UserTypeName,
 
@@ -672,8 +727,6 @@ router.get(
 
             userCompanyCode: null,
 
-            userCompanyName: "",
-
             userMemberNumber:
               userMemberNumber ||
               null,
@@ -686,7 +739,6 @@ router.get(
         if (!userMemberNumber) {
           return res.json({
             success: true,
-
             role:
               user.UserTypeName,
 
@@ -704,12 +756,6 @@ router.get(
 
             userCompanyCode:
               userCompanyCode,
-
-            userCompanyName:
-              await getCompanyName(
-                pool,
-                userCompanyCode
-              ),
 
             userMemberNumber: null,
 
@@ -748,25 +794,14 @@ router.get(
       }
 
       // =================================================
-      // DATE FILTER
-      //
-      // If both are empty:
-      // LAST 31 DAYS -> TODAY
-      // =================================================
-
-      const useDefaultDates =
-        !fromDate &&
-        !toDate;
-
-      // =================================================
-      // WHERE
+      // WHERE CONDITIONS
       // =================================================
 
       const whereConditions = [];
 
-      // =================================================
+      // -------------------------------------------------
       // COMPANY
-      // =================================================
+      // -------------------------------------------------
 
       if (finalCompanyCode) {
         whereConditions.push(
@@ -774,15 +809,30 @@ router.get(
         );
       }
 
-      // =================================================
+      // -------------------------------------------------
       // MEMBER
-      // =================================================
+      //
+      // IMPORTANT DATABASE STRUCTURE:
+      //
+      // tbl_Purchase.MemberCode
+      //        ↓
+      // tbl_Member.MemberCode
+      //
+      // tbl_User.MemberNumber
+      //        ↓
+      // tbl_Member.Number
+      //
+      // Therefore DO NOT use:
+      //
+      // p.MemberNumber
+      // m.MemberNumber
+      //
+      // -------------------------------------------------
 
       if (isMember) {
         whereConditions.push(`
-          CAST(
-            p.MemberNumber AS VARCHAR(100)
-          ) = @memberNumber
+          CAST(m.Number AS VARCHAR(100))
+            = @memberNumber
         `);
       }
 
@@ -791,17 +841,23 @@ router.get(
         canViewAllMembers
       ) {
         whereConditions.push(`
-          CAST(
-            p.MemberNumber AS VARCHAR(100)
-          ) = @memberNumber
+          CAST(m.Number AS VARCHAR(100))
+            = @memberNumber
         `);
       }
 
       // =================================================
-      // DATE
+      // DATE FILTER
       // =================================================
 
-      if (useDefaultDates) {
+      if (fromDate) {
+        whereConditions.push(`
+          CAST(
+            p.PurchaseDate AS DATE
+          ) >= @fromDate
+        `);
+      }
+      else {
         whereConditions.push(`
           p.PurchaseDate >=
             DATEADD(
@@ -810,7 +866,16 @@ router.get(
               CAST(GETDATE() AS DATE)
             )
         `);
+      }
 
+      if (toDate) {
+        whereConditions.push(`
+          CAST(
+            p.PurchaseDate AS DATE
+          ) <= @toDate
+        `);
+      }
+      else {
         whereConditions.push(`
           p.PurchaseDate <
             DATEADD(
@@ -819,18 +884,6 @@ router.get(
               CAST(GETDATE() AS DATE)
             )
         `);
-      } else {
-        if (fromDate) {
-          whereConditions.push(
-            "CAST(p.PurchaseDate AS DATE) >= @fromDate"
-          );
-        }
-
-        if (toDate) {
-          whereConditions.push(
-            "CAST(p.PurchaseDate AS DATE) <= @toDate"
-          );
-        }
       }
 
       // =================================================
@@ -838,7 +891,7 @@ router.get(
       // =================================================
 
       const whereSQL =
-        whereConditions.length
+        whereConditions.length > 0
           ? `
             WHERE
               ${whereConditions.join(
@@ -848,11 +901,15 @@ router.get(
           : "";
 
       // =================================================
-      // SQL REQUEST
+      // REQUEST
       // =================================================
 
       const request =
         pool.request();
+
+      // =================================================
+      // COMPANY PARAMETER
+      // =================================================
 
       if (finalCompanyCode) {
         request.input(
@@ -863,6 +920,10 @@ router.get(
           )
         );
       }
+
+      // =================================================
+      // MEMBER PARAMETER
+      // =================================================
 
       if (
         isMember ||
@@ -880,6 +941,10 @@ router.get(
         );
       }
 
+      // =================================================
+      // FROM DATE PARAMETER
+      // =================================================
+
       if (fromDate) {
         request.input(
           "fromDate",
@@ -887,6 +952,10 @@ router.get(
           fromDate
         );
       }
+
+      // =================================================
+      // TO DATE PARAMETER
+      // =================================================
 
       if (toDate) {
         request.input(
@@ -897,7 +966,14 @@ router.get(
       }
 
       // =================================================
-      // PURCHASE SQL
+      // PURCHASE QUERY
+      //
+      // CORRECT TABLE RELATION:
+      //
+      // tbl_Purchase.MemberCode
+      //       =
+      // tbl_Member.MemberCode
+      //
       // =================================================
 
       const purchaseQuery = `
@@ -907,98 +983,68 @@ router.get(
 
           LTRIM(RTRIM(
             ISNULL(c.Header1, '') +
-
             CASE
-              WHEN
-                ISNULL(c.Header1, '') <> ''
-                AND
-                ISNULL(c.Header2, '') <> ''
+              WHEN ISNULL(c.Header1, '') <> ''
+               AND ISNULL(c.Header2, '') <> ''
               THEN ' '
               ELSE ''
             END +
-
             ISNULL(c.Header2, '')
           )) AS CompanyName,
 
           c.EDNO AS CompanyEDNO,
 
-          m.MemberNumber AS RegisteredMemberNumber
+          m.MemberCode AS RegisteredMemberCode,
 
-        FROM tbl_Purchase p
+          m.Number AS RegisteredMemberNumber,
 
-        LEFT JOIN tbl_Company c
+          m.MemberName,
+
+          m.MemberNameEnglish,
+
+          m.MobileNo AS MemberMobileNo
+
+        FROM tbl_Purchase AS p
+
+        LEFT JOIN tbl_Company AS c
           ON c.CompanyCode =
              p.CompanyCode
 
-        LEFT JOIN tbl_Member m
+        LEFT JOIN tbl_Member AS m
           ON m.CompanyCode =
              p.CompanyCode
 
          AND CAST(
-           m.MemberNumber AS VARCHAR(100)
-         )
-           =
-         CAST(
-           p.MemberNumber AS VARCHAR(100)
-         )
+               m.MemberCode AS VARCHAR(100)
+             )
+             =
+             CAST(
+               p.MemberCode AS VARCHAR(100)
+             )
 
         ${whereSQL}
 
         ORDER BY
-          p.PurchaseDate DESC
+          p.PurchaseDate DESC,
+          p.Purchasenumber DESC
       `;
 
-      console.log("======================================");
       console.log(
-        "GET PURCHASES"
+        "======================================"
       );
       console.log(
-        "USER CODE:",
-        userCode
-      );
-      console.log(
-        "ROLE:",
-        user.UserTypeName
-      );
-      console.log(
-        "USER TYPE CODE:",
-        userTypeCode
-      );
-      console.log(
-        "REGISTERED COMPANY:",
-        userCompanyCode
-      );
-      console.log(
-        "REGISTERED MEMBER:",
-        userMemberNumber
-      );
-      console.log(
-        "REQUESTED COMPANY:",
-        requestedCompanyCode
-      );
-      console.log(
-        "REQUESTED MEMBER:",
-        requestedMemberNumber
-      );
-      console.log(
-        "FROM DATE:",
-        fromDate || "DEFAULT"
-      );
-      console.log(
-        "TO DATE:",
-        toDate || "DEFAULT"
-      );
-      console.log(
-        "FINAL COMPANY:",
-        finalCompanyCode
-      );
-      console.log(
-        "PURCHASE SQL:"
+        "PURCHASE SQL"
       );
       console.log(
         purchaseQuery
       );
-      console.log("======================================");
+      console.log(
+        "======================================"
+      );
+
+      // =================================================
+      // EXECUTE
+      // =================================================
 
       const result =
         await request.query(
@@ -1007,6 +1053,11 @@ router.get(
 
       const records =
         result.recordset || [];
+
+      console.log(
+        "PURCHASE RECORD COUNT:",
+        records.length
+      );
 
       // =================================================
       // SUMMARY
@@ -1027,18 +1078,14 @@ router.get(
       for (
         const row of records
       ) {
-        // -----------------------------------------------
-        // QUANTITY
-        // -----------------------------------------------
+
+        // ---------------------------------------------
+        // QTY
+        // ---------------------------------------------
 
         const qty =
           Number(
-            row.Qty ??
-            row.Quantity ??
-            row.QtyLitres ??
-            row.Litre ??
-            row.Liters ??
-            0
+            row.Qty ?? 0
           );
 
         if (
@@ -1047,17 +1094,13 @@ router.get(
           totalQty += qty;
         }
 
-        // -----------------------------------------------
+        // ---------------------------------------------
         // AMOUNT
-        // -----------------------------------------------
+        // ---------------------------------------------
 
         const amount =
           Number(
-            row.Amount ??
-            row.TotalAmount ??
-            row.PurchaseAmount ??
-            row.NetAmount ??
-            0
+            row.Amount ?? 0
           );
 
         if (
@@ -1066,39 +1109,40 @@ router.get(
           totalAmount += amount;
         }
 
-        // -----------------------------------------------
+        // ---------------------------------------------
         // FAT
-        // -----------------------------------------------
+        // ---------------------------------------------
 
         const fat =
           Number(
+            row.Test ??
             row.Fat ??
             row.FAT ??
-            row.FatPercent ??
-            row.FatPercentage
+            0
           );
 
         if (
-          Number.isFinite(fat)
+          Number.isFinite(fat) &&
+          fat > 0
         ) {
           totalFat += fat;
           fatCount++;
         }
 
-        // -----------------------------------------------
+        // ---------------------------------------------
         // SNF
-        // -----------------------------------------------
+        // ---------------------------------------------
 
         const snf =
           Number(
             row.Snf ??
             row.SNF ??
-            row.SnfPercent ??
-            row.SNFPercentage
+            0
           );
 
         if (
-          Number.isFinite(snf)
+          Number.isFinite(snf) &&
+          snf > 0
         ) {
           totalSnf += snf;
           snfCount++;
@@ -1116,20 +1160,25 @@ router.get(
           : 0;
 
       // =================================================
-      // COMPANY NAME
+      // USER COMPANY NAME
       // =================================================
 
-      const userCompanyName =
-        await getCompanyName(
-          pool,
-          userCompanyCode
-        );
+      let userCompanyName = "";
+
+      if (userCompanyCode) {
+        userCompanyName =
+          await getCompanyName(
+            pool,
+            userCompanyCode
+          );
+      }
 
       // =================================================
       // RESPONSE
       // =================================================
 
       return res.json({
+
         success: true,
 
         role:
@@ -1187,16 +1236,22 @@ router.get(
           count:
             records.length,
 
-          totalQty,
+          totalQty:
+            totalQty,
 
-          totalAmount,
+          totalAmount:
+            totalAmount,
 
-          avgFat,
+          avgFat:
+            avgFat,
 
-          avgSnf,
+          avgSnf:
+            avgSnf,
         },
       });
+
     } catch (error) {
+
       console.error(
         "======================================"
       );
@@ -1231,7 +1286,7 @@ router.get(
 );
 
 // =====================================================
-// TEST
+// TEST ROUTE
 // =====================================================
 
 router.get(
