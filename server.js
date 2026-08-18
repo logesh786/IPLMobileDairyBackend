@@ -2,9 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { getPool } = require("./db");
 
-// =====================================================
-// APP
-// =====================================================
+const registerRouter = require("./routes/register");
 
 const app = express();
 
@@ -19,6 +17,7 @@ const PORT = process.env.PORT || 5000;
 // =====================================================
 
 app.use(cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -34,12 +33,10 @@ const hasValue = (value) => {
   );
 };
 
-const normalize = (value) => {
-  return String(value || "").trim().toLowerCase();
-};
-
 const getCompanyName = (company) => {
-  return `${company?.Header1 || ""} ${company?.Header2 || ""}`.trim();
+  return `${company?.Header1 || ""} ${
+    company?.Header2 || ""
+  }`.trim();
 };
 
 // =====================================================
@@ -79,7 +76,8 @@ app.get("/api/usertypes", async (req, res) => {
 
     return res.status(200).json(result.recordset);
   } catch (error) {
-    console.error("GET /api/usertypes ERROR:", error);
+    console.error("GET /api/usertypes ERROR");
+    console.error(error);
 
     return res.status(500).json({
       success: false,
@@ -119,16 +117,24 @@ app.get("/api/Company", async (req, res) => {
     const companies = result.recordset.map((row) => ({
       CompanyCode: row.CompanyCode,
       EDNO: row.EDNO,
+
       CompanyName:
-        `${row.Header1 || ""} ${row.Header2 || ""}`.trim(),
+        `${row.Header1 || ""} ${
+          row.Header2 || ""
+        }`.trim(),
+
       MobileNo: row.MobileNo,
     }));
 
-    console.log("COMPANIES COUNT:", companies.length);
+    console.log(
+      "COMPANIES COUNT:",
+      companies.length
+    );
 
     return res.status(200).json(companies);
   } catch (error) {
-    console.error("GET /api/Company ERROR:", error);
+    console.error("GET /api/Company ERROR");
+    console.error(error);
 
     return res.status(500).json({
       success: false,
@@ -139,598 +145,16 @@ app.get("/api/Company", async (req, res) => {
 });
 
 // =====================================================
-// REGISTER
+// REGISTER ROUTE
+//
 // POST /api/register
-// =====================================================
 //
-// MEMBER:
-//   userTypeId
-//   CompanyCode
-//   MemberNumber
-//   RegisteredMobileNumber
-//   userName
-//   password
-//
-// SECRETARY:
-//   userTypeId
-//   CompanyCode
-//   RegisteredMobileNumber
-//   userName
-//   password
-//
+// IMPORTANT:
+// Registration code is inside:
+// routes/register.js
 // =====================================================
 
-app.post("/api/register", async (req, res) => {
-  try {
-    console.log("======================================");
-    console.log("POST /api/register");
-    console.log("REGISTER REQUEST");
-    console.log("======================================");
-
-    console.log({
-      userTypeId: req.body?.userTypeId,
-      CompanyCode: req.body?.CompanyCode,
-      MemberNumber: req.body?.MemberNumber,
-      RegisteredMobileNumber:
-        req.body?.RegisteredMobileNumber,
-      userName: req.body?.userName,
-      passwordProvided: hasValue(req.body?.password),
-    });
-
-    // =================================================
-    // READ REQUEST
-    // =================================================
-
-    const {
-      userTypeId,
-      CompanyCode,
-      MemberNumber,
-      RegisteredMobileNumber,
-      userName,
-      password,
-    } = req.body || {};
-
-    // =================================================
-    // BASIC VALIDATION
-    // =================================================
-
-    if (!hasValue(userTypeId)) {
-      return res.status(400).json({
-        success: false,
-        message: "User type is required.",
-      });
-    }
-
-    if (!hasValue(CompanyCode)) {
-      return res.status(400).json({
-        success: false,
-        message: "Company is required.",
-      });
-    }
-
-    if (!hasValue(RegisteredMobileNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: "Registered mobile number is required.",
-      });
-    }
-
-    if (!hasValue(userName)) {
-      return res.status(400).json({
-        success: false,
-        message: "Username is required.",
-      });
-    }
-
-    if (!hasValue(password)) {
-      return res.status(400).json({
-        success: false,
-        message: "Password is required.",
-      });
-    }
-
-    // =================================================
-    // USER TYPE CODE
-    // =================================================
-
-    const parsedUserTypeCode = Number(userTypeId);
-
-    if (!Number.isInteger(parsedUserTypeCode)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user type.",
-      });
-    }
-
-    // =================================================
-    // MOBILE
-    // =================================================
-
-    const mobile = String(
-      RegisteredMobileNumber
-    ).trim();
-
-    if (!/^[6-9]\d{9}$/.test(mobile)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Please enter a valid 10-digit mobile number.",
-      });
-    }
-
-    // =================================================
-    // CLEAN VALUES
-    // =================================================
-
-    const companyCode = String(CompanyCode).trim();
-
-    const cleanMemberNumber = hasValue(MemberNumber)
-      ? String(MemberNumber).trim()
-      : "";
-
-    const cleanUserName = String(userName).trim();
-
-    const cleanPassword = String(password);
-
-    // =================================================
-    // DATABASE
-    // =================================================
-
-    const pool = await getPool();
-
-    // =================================================
-    // GET USER TYPE
-    // =================================================
-
-    const userTypeRequest = pool.request();
-
-    userTypeRequest.input(
-      "UserTypeCode",
-      parsedUserTypeCode
-    );
-
-    const userTypeResult =
-      await userTypeRequest.query(`
-        SELECT
-          UserTypeCode,
-          UserTypeName
-        FROM tbl_UserType
-        WHERE UserTypeCode = @UserTypeCode
-      `);
-
-    if (userTypeResult.recordset.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "User type does not exist.",
-      });
-    }
-
-    const userTypeRow =
-      userTypeResult.recordset[0];
-
-    const userTypeName =
-      String(userTypeRow.UserTypeName || "").trim();
-
-    const normalizedUserType = normalize(userTypeName);
-
-    console.log("USER TYPE:", userTypeName);
-    console.log(
-      "USER TYPE CODE:",
-      parsedUserTypeCode
-    );
-
-    // =================================================
-    // DETERMINE MEMBER / SECRETARY
-    // =================================================
-
-    const isMember =
-      normalizedUserType === "member";
-
-    const isSecretary =
-      normalizedUserType === "secretary" ||
-      normalizedUserType === "secretory";
-
-    console.log("IS MEMBER:", isMember);
-    console.log("IS SECRETARY:", isSecretary);
-
-    // =================================================
-    // MEMBER NUMBER REQUIRED ONLY FOR MEMBER
-    // =================================================
-
-    if (isMember && !hasValue(cleanMemberNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: "Member Number is required.",
-      });
-    }
-
-    // =================================================
-    // CHECK COMPANY / SOCIETY
-    // =================================================
-
-    const companyRequest = pool.request();
-
-    companyRequest.input(
-      "CompanyCode",
-      companyCode
-    );
-
-    const companyResult =
-      await companyRequest.query(`
-        SELECT TOP 1
-          CompanyCode,
-          EDNO,
-          Header1,
-          Header2,
-          MobileNo
-        FROM tbl_Company
-        WHERE CompanyCode = @CompanyCode
-      `);
-
-    if (companyResult.recordset.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Selected society does not exist.",
-      });
-    }
-
-    const company =
-      companyResult.recordset[0];
-
-    const companyName = getCompanyName(company);
-
-    console.log("COMPANY CODE:", company.CompanyCode);
-    console.log("COMPANY NAME:", companyName);
-
-    // =================================================
-    // MEMBER VALIDATION
-    // =================================================
-
-    if (isMember) {
-      console.log("======================================");
-      console.log("CHECKING MEMBER");
-      console.log("======================================");
-
-      const memberRequest = pool.request();
-
-      memberRequest.input(
-        "CompanyCode",
-        companyCode
-      );
-
-      memberRequest.input(
-        "MemberNumber",
-        cleanMemberNumber
-      );
-
-      memberRequest.input(
-        "MobileNo",
-        mobile
-      );
-
-      const memberResult =
-        await memberRequest.query(`
-          SELECT TOP 1
-            CompanyCode,
-            MemberNumber,
-            MobileNo
-          FROM tbl_Member
-          WHERE
-            CompanyCode = @CompanyCode
-            AND MemberNumber = @MemberNumber
-            AND MobileNo = @MobileNo
-        `);
-
-      console.log(
-        "MEMBER MATCH COUNT:",
-        memberResult.recordset.length
-      );
-
-      if (memberResult.recordset.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Member details do not match the registered society records.",
-        });
-      }
-    }
-
-    // =================================================
-    // SECRETARY VALIDATION
-    // =================================================
-
-    if (isSecretary) {
-      console.log("======================================");
-      console.log("CHECKING SECRETARY");
-      console.log("======================================");
-
-      const companyMobile =
-        String(company.MobileNo || "").trim();
-
-      if (companyMobile !== mobile) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Registered mobile number does not match the society records.",
-        });
-      }
-    }
-
-    // =================================================
-    // OTHER USER TYPES
-    // =================================================
-
-    if (!isMember && !isSecretary) {
-      console.log(
-        "OTHER USER TYPE REGISTRATION:",
-        userTypeName
-      );
-    }
-
-    // =================================================
-    // CHECK USERNAME
-    // =================================================
-
-    const usernameRequest = pool.request();
-
-    usernameRequest.input(
-      "UserName",
-      cleanUserName
-    );
-
-    const usernameResult =
-      await usernameRequest.query(`
-        SELECT TOP 1
-          UserCode,
-          UserName
-        FROM tbl_User
-        WHERE UserName = @UserName
-      `);
-
-    if (usernameResult.recordset.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Username already exists.",
-      });
-    }
-
-    // =================================================
-    // CHECK DUPLICATE MEMBER REGISTRATION
-    // =================================================
-
-    if (isMember) {
-      const duplicateMemberRequest =
-        pool.request();
-
-      duplicateMemberRequest.input(
-        "CompanyCode",
-        companyCode
-      );
-
-      duplicateMemberRequest.input(
-        "MemberNumber",
-        cleanMemberNumber
-      );
-
-      duplicateMemberRequest.input(
-        "UserTypeCode",
-        parsedUserTypeCode
-      );
-
-      const duplicateMemberResult =
-        await duplicateMemberRequest.query(`
-          SELECT TOP 1
-            UserCode,
-            UserName
-          FROM tbl_User
-          WHERE
-            CompanyCode = @CompanyCode
-            AND MemberNumber = @MemberNumber
-            AND UserTypeCode = @UserTypeCode
-        `);
-
-      if (
-        duplicateMemberResult.recordset.length > 0
-      ) {
-        return res.status(409).json({
-          success: false,
-          message:
-            "This member is already registered.",
-        });
-      }
-    }
-
-    // =================================================
-    // CHECK DUPLICATE SECRETARY
-    // =================================================
-
-    if (isSecretary) {
-      const duplicateSecretaryRequest =
-        pool.request();
-
-      duplicateSecretaryRequest.input(
-        "CompanyCode",
-        companyCode
-      );
-
-      duplicateSecretaryRequest.input(
-        "UserTypeCode",
-        parsedUserTypeCode
-      );
-
-      const duplicateSecretaryResult =
-        await duplicateSecretaryRequest.query(`
-          SELECT TOP 1
-            UserCode,
-            UserName
-          FROM tbl_User
-          WHERE
-            CompanyCode = @CompanyCode
-            AND UserTypeCode = @UserTypeCode
-        `);
-
-      if (
-        duplicateSecretaryResult.recordset.length > 0
-      ) {
-        return res.status(409).json({
-          success: false,
-          message:
-            "A secretary account already exists for this society.",
-        });
-      }
-    }
-
-    // =================================================
-    // GET NEXT USER CODE
-    // =================================================
-
-    const codeResult =
-      await pool.request().query(`
-        SELECT
-          ISNULL(MAX(UserCode), 0) + 1 AS NextUserCode
-        FROM tbl_User
-      `);
-
-    const nextUserCode =
-      Number(
-        codeResult.recordset[0]?.NextUserCode
-      );
-
-    if (
-      !Number.isInteger(nextUserCode) ||
-      nextUserCode <= 0
-    ) {
-      return res.status(500).json({
-        success: false,
-        message: "Unable to generate UserCode.",
-      });
-    }
-
-    // =================================================
-    // INSERT USER
-    // =================================================
-
-    console.log("======================================");
-    console.log("INSERTING USER");
-    console.log("UserCode:", nextUserCode);
-    console.log(
-      "UserTypeCode:",
-      parsedUserTypeCode
-    );
-    console.log("CompanyCode:", companyCode);
-    console.log(
-      "MemberNumber:",
-      isMember ? cleanMemberNumber : ""
-    );
-    console.log("UserName:", cleanUserName);
-    console.log("======================================");
-
-    const insertRequest =
-      pool.request();
-
-    insertRequest.input(
-      "UserCode",
-      nextUserCode
-    );
-
-    insertRequest.input(
-      "UserTypeCode",
-      parsedUserTypeCode
-    );
-
-    insertRequest.input(
-      "UserName",
-      cleanUserName
-    );
-
-    insertRequest.input(
-      "Password",
-      cleanPassword
-    );
-
-    insertRequest.input(
-      "CompanyCode",
-      companyCode
-    );
-
-    insertRequest.input(
-      "MemberNumber",
-      isMember
-        ? cleanMemberNumber
-        : ""
-    );
-
-    insertRequest.input(
-      "RegisteredMobileNumber",
-      mobile
-    );
-
-    await insertRequest.query(`
-      INSERT INTO tbl_User
-      (
-        UserCode,
-        UserTypeCode,
-        UserName,
-        Password,
-        CompanyCode,
-        MemberNumber,
-        RegisteredMobileNumber
-      )
-      VALUES
-      (
-        @UserCode,
-        @UserTypeCode,
-        @UserName,
-        @Password,
-        @CompanyCode,
-        @MemberNumber,
-        @RegisteredMobileNumber
-      )
-    `);
-
-    // =================================================
-    // SUCCESS
-    // =================================================
-
-    console.log("======================================");
-    console.log("REGISTRATION SUCCESS");
-    console.log("UserCode:", nextUserCode);
-    console.log("UserName:", cleanUserName);
-    console.log("CompanyCode:", companyCode);
-    console.log("CompanyName:", companyName);
-    console.log("======================================");
-
-    return res.status(201).json({
-      success: true,
-      message: "User created successfully.",
-
-      user: {
-        userCode: nextUserCode,
-        userTypeCode: parsedUserTypeCode,
-        userTypeName: userTypeRow.UserTypeName,
-        userName: cleanUserName,
-        companyCode: companyCode,
-        companyName: companyName,
-        memberNumber: isMember
-          ? cleanMemberNumber
-          : "",
-        registeredMobileNumber: mobile,
-      },
-    });
-  } catch (error) {
-    console.error("======================================");
-    console.error("POST /api/register ERROR");
-    console.error("======================================");
-    console.error(error);
-    console.error("======================================");
-
-    return res.status(500).json({
-      success: false,
-      message: "Registration failed.",
-      error: error.message,
-    });
-  }
-});
+app.use("/api", registerRouter);
 
 // =====================================================
 // LOGIN
@@ -744,22 +168,17 @@ app.post("/api/login", async (req, res) => {
     console.log("LOGIN REQUEST");
     console.log("======================================");
 
-    console.log({
-      userTypeId: req.body?.userTypeId,
-      userName: req.body?.userName,
-      passwordProvided:
-        hasValue(req.body?.password),
-    });
-
-    // =================================================
-    // READ REQUEST
-    // =================================================
-
     const {
       userTypeId,
       userName,
       password,
     } = req.body || {};
+
+    console.log({
+      userTypeId,
+      userName,
+      passwordProvided: hasValue(password),
+    });
 
     // =================================================
     // VALIDATION
@@ -812,16 +231,19 @@ app.post("/api/login", async (req, res) => {
 
     request.input(
       "UserName",
+      require("mssql").VarChar(100),
       String(userName).trim()
     );
 
     request.input(
       "Password",
+      require("mssql").VarChar(255),
       String(password)
     );
 
     request.input(
       "UserTypeCode",
+      require("mssql").Int,
       parsedUserTypeCode
     );
 
@@ -829,45 +251,48 @@ app.post("/api/login", async (req, res) => {
     // LOGIN QUERY
     // =================================================
 
-    const result =
-      await request.query(`
-        SELECT
-          U.UserCode,
-          U.UserTypeCode,
-          U.UserName,
-          U.RegisteredMobileNumber,
-          U.MemberNumber,
-          U.CompanyCode,
+    const result = await request.query(`
+      SELECT TOP 1
 
-          UT.UserTypeName,
+        U.UserCode,
+        U.UserTypeCode,
+        U.UserName,
+        U.RegisteredMobileNumber,
+        U.MemberNumber,
+        U.CompanyCode,
 
-          C.EDNO,
-          C.Header1,
-          C.Header2,
-          C.MobileNo
+        UT.UserTypeName,
 
-        FROM tbl_User AS U
+        C.EDNO,
+        C.Header1,
+        C.Header2,
+        C.MobileNo
 
-        LEFT JOIN tbl_UserType AS UT
-          ON U.UserTypeCode =
-             UT.UserTypeCode
+      FROM tbl_User AS U
 
-        LEFT JOIN tbl_Company AS C
-          ON U.CompanyCode =
-             C.CompanyCode
+      LEFT JOIN tbl_UserType AS UT
+        ON U.UserTypeCode =
+           UT.UserTypeCode
 
-        WHERE
-          U.UserName = @UserName
-          AND U.Password = @Password
-          AND U.UserTypeCode =
-              @UserTypeCode
-      `);
+      LEFT JOIN tbl_Company AS C
+        ON U.CompanyCode =
+           C.CompanyCode
+
+      WHERE
+        U.UserName = @UserName
+        AND U.Password = @Password
+        AND U.UserTypeCode =
+            @UserTypeCode
+    `);
 
     // =================================================
     // LOGIN FAILED
     // =================================================
 
-    if (result.recordset.length === 0) {
+    if (
+      !result.recordset ||
+      result.recordset.length === 0
+    ) {
       console.log("LOGIN FAILED");
 
       return res.status(401).json({
@@ -878,16 +303,13 @@ app.post("/api/login", async (req, res) => {
     }
 
     // =================================================
-    // USER
+    // LOGIN USER
     // =================================================
 
-    const row =
-      result.recordset[0];
+    const row = result.recordset[0];
 
     const companyName =
-      `${row.Header1 || ""} ${
-        row.Header2 || ""
-      }`.trim();
+      getCompanyName(row);
 
     const user = {
       userCode:
@@ -927,45 +349,52 @@ app.post("/api/login", async (req, res) => {
 
     console.log("======================================");
     console.log("LOGIN SUCCESS");
+    console.log("======================================");
+
     console.log("UserCode:", user.userCode);
-    console.log("UserName:", user.userName);
+    console.log(
+      "UserName:",
+      user.userName
+    );
+
     console.log(
       "UserTypeCode:",
       user.userTypeCode
     );
+
     console.log(
       "UserType:",
       user.userTypeName
     );
+
     console.log(
       "CompanyCode:",
       user.companyCode
     );
+
     console.log(
       "CompanyName:",
       user.companyName
     );
+
     console.log(
       "MemberNumber:",
       user.memberNumber
     );
-    console.log("======================================");
 
-    // =================================================
-    // SUCCESS
-    // =================================================
+    console.log("======================================");
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      user: user,
+      user,
     });
   } catch (error) {
     console.error("======================================");
     console.error("POST /api/login ERROR");
     console.error("======================================");
+
     console.error(error);
-    console.error("======================================");
 
     return res.status(500).json({
       success: false,
@@ -976,7 +405,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 // =====================================================
-// 404 HANDLER
+// 404
 // =====================================================
 
 app.use((req, res) => {
@@ -988,11 +417,14 @@ app.use((req, res) => {
 });
 
 // =====================================================
-// GLOBAL ERROR HANDLER
+// GLOBAL ERROR
 // =====================================================
 
 app.use((err, req, res, next) => {
-  console.error("GLOBAL SERVER ERROR:", err);
+  console.error(
+    "GLOBAL SERVER ERROR:",
+    err
+  );
 
   return res.status(500).json({
     success: false,
@@ -1007,13 +439,17 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log("======================================");
-  console.log(`Server running on port ${PORT}`);
-  console.log(`http://localhost:${PORT}`);
+  console.log(
+    `Server running on port ${PORT}`
+  );
+  console.log(
+    `http://localhost:${PORT}`
+  );
   console.log("======================================");
 });
 
 // =====================================================
-// EXPORT APP
+// EXPORT
 // =====================================================
 
 module.exports = app;

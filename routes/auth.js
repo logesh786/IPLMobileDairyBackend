@@ -31,7 +31,7 @@ const cleanString = (value) => {
 // =====================================================
 
 router.post("/register", async (req, res) => {
-  let transaction;
+  let transaction = null;
 
   try {
     console.log("======================================");
@@ -102,7 +102,7 @@ router.post("/register", async (req, res) => {
     }
 
     // =================================================
-    // NORMALIZE VALUES
+    // NORMALIZE
     // =================================================
 
     const parsedUserTypeCode = Number(userTypeId);
@@ -212,8 +212,7 @@ router.post("/register", async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "User type does not exist.",
+        message: "User type does not exist.",
       });
     }
 
@@ -239,7 +238,7 @@ router.post("/register", async (req, res) => {
     console.log("IS SECRETARY:", isSecretary);
 
     // =================================================
-    // MEMBER NUMBER REQUIRED FOR MEMBER
+    // MEMBER NUMBER REQUIRED
     // =================================================
 
     if (
@@ -248,8 +247,7 @@ router.post("/register", async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Member Number is required.",
+        message: "Member Number is required.",
       });
     }
 
@@ -263,14 +261,6 @@ router.post("/register", async (req, res) => {
     console.log("======================================");
 
     const companyRequest = pool.request();
-
-    /*
-     * IMPORTANT:
-     * CompanyCode is sent as VARCHAR/NVARCHAR.
-     *
-     * This avoids problems if CompanyCode is stored
-     * as VARCHAR in SQL Server.
-     */
 
     companyRequest.input(
       "CompanyCode",
@@ -301,8 +291,7 @@ router.post("/register", async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Selected society does not exist.",
+        message: "Selected society does not exist.",
       });
     }
 
@@ -314,12 +303,42 @@ router.post("/register", async (req, res) => {
         company.Header2 || ""
       }`.trim();
 
-    console.log("COMPANY CODE:", company.CompanyCode);
-    console.log("COMPANY NAME:", companyName);
-    console.log("COMPANY MOBILE:", company.MobileNo);
+    console.log(
+      "COMPANY CODE:",
+      company.CompanyCode
+    );
+
+    console.log(
+      "COMPANY NAME:",
+      companyName
+    );
+
+    console.log(
+      "COMPANY MOBILE:",
+      company.MobileNo
+    );
 
     // =================================================
     // MEMBER VALIDATION
+    // =================================================
+    //
+    // IMPORTANT:
+    // tbl_Member contains:
+    //
+    // MemberCode
+    // Number
+    // MemberName
+    // CompanyCode
+    // MobileNo
+    //
+    // There is NO MemberNumber column.
+    //
+    // Therefore:
+    //
+    // MemberNumber from frontend
+    //        ↓
+    // tbl_Member.Number
+    //
     // =================================================
 
     if (isMember) {
@@ -351,13 +370,19 @@ router.post("/register", async (req, res) => {
       const memberResult =
         await memberRequest.query(`
           SELECT TOP 1
+            MemberCode,
+            Number,
+            MemberName,
             CompanyCode,
-            MemberNumber,
-            MobileNo
+            MobileNo,
+            MemberNameEnglish,
+            FatherName,
+            DateOfJoining,
+            Status
           FROM tbl_Member
           WHERE
             CompanyCode = @CompanyCode
-            AND MemberNumber = @MemberNumber
+            AND Number = @MemberNumber
             AND MobileNo = @MobileNo
         `);
 
@@ -370,6 +395,8 @@ router.post("/register", async (req, res) => {
         !memberResult.recordset ||
         memberResult.recordset.length === 0
       ) {
+        console.log("MEMBER VALIDATION FAILED");
+
         return res.status(400).json({
           success: false,
           message:
@@ -377,9 +404,28 @@ router.post("/register", async (req, res) => {
         });
       }
 
-      console.log(
-        "MEMBER VALIDATION SUCCESS"
-      );
+      const member =
+        memberResult.recordset[0];
+
+      console.log("MEMBER VALIDATION SUCCESS");
+
+      console.log("MEMBER DATA:");
+      console.log({
+        MemberCode:
+          member.MemberCode,
+
+        Number:
+          member.Number,
+
+        MemberName:
+          member.MemberName,
+
+        CompanyCode:
+          member.CompanyCode,
+
+        MobileNo:
+          member.MobileNo,
+      });
     }
 
     // =================================================
@@ -452,13 +498,12 @@ router.post("/register", async (req, res) => {
     ) {
       return res.status(409).json({
         success: false,
-        message:
-          "Username already exists.",
+        message: "Username already exists.",
       });
     }
 
     // =================================================
-    // CHECK DUPLICATE MEMBER
+    // CHECK DUPLICATE MEMBER REGISTRATION
     // =================================================
 
     if (isMember) {
@@ -526,6 +571,7 @@ router.post("/register", async (req, res) => {
           existingUser: {
             userCode:
               existing.UserCode,
+
             userName:
               existing.UserName,
           },
@@ -549,12 +595,6 @@ router.post("/register", async (req, res) => {
     // =================================================
     // GET NEXT USER CODE
     // =================================================
-
-    /*
-     * UPDLOCK + HOLDLOCK prevents two simultaneous
-     * registrations from selecting the same UserCode
-     * as far as the transaction isolation allows.
-     */
 
     const codeRequest =
       new sql.Request(transaction);
@@ -696,22 +736,36 @@ router.post("/register", async (req, res) => {
     console.log("======================================");
 
     console.log({
-      UserCode: nextUserCode,
-      UserTypeCode: parsedUserTypeCode,
+      UserCode:
+        nextUserCode,
+
+      UserTypeCode:
+        parsedUserTypeCode,
+
       UserTypeName:
         userTypeRow.UserTypeName,
-      UserName: cleanUserName,
-      CompanyCode: companyCode,
-      CompanyName: companyName,
+
+      UserName:
+        cleanUserName,
+
+      CompanyCode:
+        companyCode,
+
+      CompanyName:
+        companyName,
+
       MemberNumber:
         isMember
           ? memberNumber
           : "",
-      RegisteredMobileNumber: mobile,
+
+      RegisteredMobileNumber:
+        mobile,
     });
 
     return res.status(201).json({
       success: true,
+
       message:
         "User created successfully.",
 
@@ -766,7 +820,7 @@ router.post("/register", async (req, res) => {
     }
 
     // =================================================
-    // DETAILED ERROR
+    // ERROR LOG
     // =================================================
 
     console.error("======================================");
@@ -821,7 +875,7 @@ router.post("/register", async (req, res) => {
     console.error("======================================");
 
     // =================================================
-    // SQL DUPLICATE KEY
+    // DUPLICATE KEY
     // =================================================
 
     if (
