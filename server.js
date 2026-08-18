@@ -24,10 +24,9 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api/register", registerRouter);
 // =====================================================
 // HELPERS
 // =====================================================
@@ -51,6 +50,8 @@ const getCompanyName = (company) => {
 // =====================================================
 
 app.get("/", (req, res) => {
+  console.log("GET /");
+
   return res.status(200).json({
     success: true,
     message: "Backend API is running",
@@ -59,13 +60,14 @@ app.get("/", (req, res) => {
 });
 
 // =====================================================
-// API HEALTH CHECK
+// TEST REGISTER ROUTE
 // =====================================================
 
-app.get("/api", (req, res) => {
+app.get("/api/register", (req, res) => {
   return res.status(200).json({
     success: true,
-    message: "API is running",
+    message:
+      "Register API route exists. Use POST /api/register to register a user.",
   });
 });
 
@@ -75,11 +77,11 @@ app.get("/api", (req, res) => {
 // =====================================================
 
 app.get("/api/usertypes", async (req, res) => {
-  console.log("======================================");
-  console.log("GET /api/usertypes");
-  console.log("======================================");
-
   try {
+    console.log("======================================");
+    console.log("GET /api/usertypes");
+    console.log("======================================");
+
     const pool = await getPool();
 
     const result = await pool.request().query(`
@@ -100,7 +102,7 @@ app.get("/api/usertypes", async (req, res) => {
     );
   } catch (error) {
     console.error(
-      "GET /api/usertypes ERROR:"
+      "GET /api/usertypes ERROR"
     );
 
     console.error(error);
@@ -119,11 +121,11 @@ app.get("/api/usertypes", async (req, res) => {
 // =====================================================
 
 app.get("/api/Company", async (req, res) => {
-  console.log("======================================");
-  console.log("GET /api/Company");
-  console.log("======================================");
-
   try {
+    console.log("======================================");
+    console.log("GET /api/Company");
+    console.log("======================================");
+
     const pool = await getPool();
 
     const result = await pool.request().query(`
@@ -142,16 +144,19 @@ app.get("/api/Company", async (req, res) => {
 
     const companies =
       result.recordset.map((row) => ({
-        CompanyCode: row.CompanyCode,
+        CompanyCode:
+          row.CompanyCode,
 
-        EDNO: row.EDNO,
+        EDNO:
+          row.EDNO,
 
         CompanyName:
           `${row.Header1 || ""} ${
             row.Header2 || ""
           }`.trim(),
 
-        MobileNo: row.MobileNo,
+        MobileNo:
+          row.MobileNo,
       }));
 
     console.log(
@@ -164,7 +169,7 @@ app.get("/api/Company", async (req, res) => {
     );
   } catch (error) {
     console.error(
-      "GET /api/Company ERROR:"
+      "GET /api/Company ERROR"
     );
 
     console.error(error);
@@ -180,9 +185,19 @@ app.get("/api/Company", async (req, res) => {
 // =====================================================
 // REGISTER
 //
-// POST /api/register
-//
 // IMPORTANT
+//
+// This MUST be:
+//
+// app.use("/api/register", registerRouter);
+//
+// because register.js contains:
+//
+// router.post("/", ...)
+//
+// Therefore final URL:
+//
+// POST /api/register
 // =====================================================
 
 app.use(
@@ -196,13 +211,12 @@ app.use(
 // =====================================================
 
 app.post("/api/login", async (req, res) => {
-  console.log("======================================");
-  console.log("POST /api/login");
-  console.log("LOGIN REQUEST");
-  console.log(req.body);
-  console.log("======================================");
-
   try {
+    console.log("======================================");
+    console.log("POST /api/login");
+    console.log("LOGIN REQUEST");
+    console.log("======================================");
+
     const {
       userTypeId,
       UserTypeCode,
@@ -227,14 +241,13 @@ app.post("/api/login", async (req, res) => {
       Password ??
       "";
 
-    console.log(
-      "NORMALIZED LOGIN:"
-    );
-
     console.log({
-      userTypeId,
-      finalUserTypeCode,
-      finalUserName,
+      userTypeId:
+        finalUserTypeCode,
+
+      userName:
+        finalUserName,
+
       passwordProvided:
         hasValue(finalPassword),
     });
@@ -246,7 +259,8 @@ app.post("/api/login", async (req, res) => {
     if (
       !Number.isInteger(
         finalUserTypeCode
-      )
+      ) ||
+      finalUserTypeCode <= 0
     ) {
       return res.status(400).json({
         success: false,
@@ -292,7 +306,9 @@ app.post("/api/login", async (req, res) => {
     request.input(
       "Password",
       sql.NVarChar(50),
-      String(finalPassword)
+      String(
+        finalPassword
+      )
     );
 
     request.input(
@@ -335,20 +351,14 @@ app.post("/api/login", async (req, res) => {
              C.CompanyCode
 
         WHERE
-          U.UserName =
-            @UserName
+          U.UserName = @UserName
 
           AND U.Password =
-            @Password
+              @Password
 
           AND U.UserTypeCode =
-            @UserTypeCode
+              @UserTypeCode
       `);
-
-    console.log(
-      "LOGIN RECORD COUNT:",
-      result.recordset.length
-    );
 
     // =================================================
     // LOGIN FAILED
@@ -370,7 +380,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     // =================================================
-    // LOGIN SUCCESS
+    // LOGIN USER
     // =================================================
 
     const row =
@@ -414,43 +424,28 @@ app.post("/api/login", async (req, res) => {
 
     console.log("======================================");
     console.log("LOGIN SUCCESS");
-    console.log("======================================");
-
-    console.log(
-      "UserCode:",
-      user.userCode
-    );
-
-    console.log(
-      "UserName:",
-      user.userName
-    );
-
+    console.log("UserCode:", user.userCode);
+    console.log("UserName:", user.userName);
     console.log(
       "UserTypeCode:",
       user.userTypeCode
     );
-
     console.log(
       "UserType:",
       user.userTypeName
     );
-
     console.log(
       "CompanyCode:",
       user.companyCode
     );
-
     console.log(
       "CompanyName:",
       user.companyName
     );
-
     console.log(
       "MemberNumber:",
       user.memberNumber
     );
-
     console.log("======================================");
 
     return res.status(200).json({
@@ -463,9 +458,8 @@ app.post("/api/login", async (req, res) => {
     console.error(
       "POST /api/login ERROR"
     );
-    console.error("======================================");
-
     console.error(error);
+    console.error("======================================");
 
     return res.status(500).json({
       success: false,
@@ -476,7 +470,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 // =====================================================
-// 404 HANDLER
+// 404
 // =====================================================
 
 app.use((req, res) => {
@@ -491,28 +485,20 @@ app.use((req, res) => {
   return res.status(404).json({
     success: false,
     message: "API route not found",
+    method: req.method,
     path: req.originalUrl,
   });
 });
 
 // =====================================================
-// GLOBAL ERROR HANDLER
+// GLOBAL ERROR
 // =====================================================
 
 app.use(
   (err, req, res, next) => {
     console.error(
-      "======================================"
-    );
-
-    console.error(
-      "GLOBAL SERVER ERROR"
-    );
-
-    console.error(err);
-
-    console.error(
-      "======================================"
+      "GLOBAL SERVER ERROR:",
+      err
     );
 
     return res.status(500).json({
@@ -520,8 +506,7 @@ app.use(
       message:
         "Internal server error",
       error:
-        err?.message ||
-        "Unknown server error",
+        err.message,
     });
   }
 );
@@ -533,42 +518,21 @@ app.use(
 app.listen(
   PORT,
   () => {
-    console.log(
-      "======================================"
-    );
-
+    console.log("======================================");
     console.log(
       `Server running on port ${PORT}`
     );
-
     console.log(
       `http://localhost:${PORT}`
     );
-
     console.log(
-      "REGISTER ROUTE:"
+      `REGISTER: POST /api/register`
     );
-
     console.log(
-      "POST /api/register"
+      `LOGIN: POST /api/login`
     );
-
-    console.log(
-      "LOGIN ROUTE:"
-    );
-
-    console.log(
-      "POST /api/login"
-    );
-
-    console.log(
-      "======================================"
-    );
+    console.log("======================================");
   }
 );
-
-// =====================================================
-// EXPORT
-// =====================================================
 
 module.exports = app;

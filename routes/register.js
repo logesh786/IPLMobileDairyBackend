@@ -5,6 +5,18 @@ const sql = require("mssql");
 const { getPool } = require("../db");
 
 // =====================================================
+// REGISTER USER
+//
+// Mounted from server.js:
+//
+// app.use("/api/register", registerRouter);
+//
+// Therefore:
+//
+// router.post("/")
+//
+// becomes:
+//
 // POST /api/register
 // =====================================================
 
@@ -15,156 +27,217 @@ router.post("/", async (req, res) => {
   console.log(req.body);
   console.log("======================================");
 
-  const {
-    userTypeId,
-    UserTypeCode,
-
-    CompanyCode,
-
-    MemberNumber,
-
-    RegisteredMobileNumber,
-
-    userName,
-    UserName,
-
-    password,
-    Password,
-  } = req.body || {};
-
-  // ===================================================
-  // NORMALIZE
-  // ===================================================
-
-  const finalUserTypeCode =
-    Number(
-      userTypeId ??
-        UserTypeCode
-    );
-
-  const finalCompanyCode =
-    Number(CompanyCode);
-
-  const finalMemberNumber =
-    MemberNumber !== undefined &&
-    MemberNumber !== null
-      ? String(
-          MemberNumber
-        ).trim()
-      : "";
-
-  const finalMobile =
-    RegisteredMobileNumber !==
-      undefined &&
-    RegisteredMobileNumber !==
-      null
-      ? String(
-          RegisteredMobileNumber
-        ).trim()
-      : "";
-
-  const finalUserName =
-    userName ??
-    UserName ??
-    "";
-
-  const finalPassword =
-    password ??
-    Password ??
-    "";
-
-  console.log(
-    "NORMALIZED REGISTER:"
-  );
-
-  console.log({
-    finalUserTypeCode,
-    finalCompanyCode,
-    finalMemberNumber,
-    finalMobile,
-    finalUserName,
-    passwordProvided:
-      Boolean(finalPassword),
-  });
-
-  // ===================================================
-  // VALIDATION
-  // ===================================================
-
-  if (
-    !Number.isInteger(
-      finalUserTypeCode
-    )
-  ) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Invalid user type.",
-    });
-  }
-
-  if (
-    !Number.isInteger(
-      finalCompanyCode
-    )
-  ) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Invalid CompanyCode.",
-    });
-  }
-
-  if (
-    !String(finalUserName).trim()
-  ) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "User name is required.",
-    });
-  }
-
-  if (
-    !String(finalPassword).trim()
-  ) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Password is required.",
-    });
-  }
-
-  // ===================================================
-  // MEMBER VALIDATION
-  //
-  // tbl_Member:
-  //
-  // MemberCode
-  // MemberName
-  // CompanyCode
-  // Number
-  //
-  // Number = MEMBER NUMBER
-  // ===================================================
-
-  if (
-    finalUserTypeCode === 1 &&
-    !finalMemberNumber
-  ) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Member number is required.",
-    });
-  }
-
-  let pool;
-  let transaction;
+  let transaction = null;
 
   try {
-    pool =
+    const {
+      userTypeId,
+      UserTypeCode,
+
+      CompanyCode,
+
+      MemberNumber,
+
+      RegisteredMobileNumber,
+
+      userName,
+      UserName,
+
+      password,
+      Password,
+    } = req.body || {};
+
+    // ===================================================
+    // NORMALIZE USER TYPE
+    // ===================================================
+
+    const finalUserTypeCode =
+      Number(
+        userTypeId ??
+          UserTypeCode
+      );
+
+    // ===================================================
+    // NORMALIZE COMPANY
+    // ===================================================
+
+    const finalCompanyCode =
+      Number(
+        CompanyCode
+      );
+
+    // ===================================================
+    // NORMALIZE MEMBER NUMBER
+    // ===================================================
+
+    const finalMemberNumber =
+      MemberNumber !== undefined &&
+      MemberNumber !== null
+        ? String(
+            MemberNumber
+          ).trim()
+        : "";
+
+    // ===================================================
+    // NORMALIZE MOBILE
+    // ===================================================
+
+    const finalMobile =
+      RegisteredMobileNumber !==
+        undefined &&
+      RegisteredMobileNumber !==
+        null
+        ? String(
+            RegisteredMobileNumber
+          ).trim()
+        : "";
+
+    // ===================================================
+    // NORMALIZE USERNAME
+    // ===================================================
+
+    const finalUserName =
+      userName ??
+      UserName ??
+      "";
+
+    // ===================================================
+    // NORMALIZE PASSWORD
+    // ===================================================
+
+    const finalPassword =
+      password ??
+      Password ??
+      "";
+
+    console.log("======================================");
+    console.log(
+      "NORMALIZED REGISTER DATA"
+    );
+    console.log(
+      "UserTypeCode:",
+      finalUserTypeCode
+    );
+    console.log(
+      "CompanyCode:",
+      finalCompanyCode
+    );
+    console.log(
+      "MemberNumber:",
+      finalMemberNumber
+    );
+    console.log(
+      "Mobile:",
+      finalMobile
+    );
+    console.log(
+      "UserName:",
+      finalUserName
+    );
+    console.log(
+      "Password provided:",
+      !!String(
+        finalPassword
+      ).trim()
+    );
+    console.log("======================================");
+
+    // ===================================================
+    // VALIDATION
+    // ===================================================
+
+    if (
+      !Number.isInteger(
+        finalUserTypeCode
+      ) ||
+      finalUserTypeCode <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid user type.",
+      });
+    }
+
+    if (
+      !Number.isInteger(
+        finalCompanyCode
+      ) ||
+      finalCompanyCode <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid CompanyCode.",
+      });
+    }
+
+    if (
+      !String(
+        finalUserName
+      ).trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "User name is required.",
+      });
+    }
+
+    if (
+      !String(
+        finalPassword
+      ).trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password is required.",
+      });
+    }
+
+    // ===================================================
+    // MEMBER VALIDATION
+    //
+    // Member user type = 1
+    //
+    // tbl_Member:
+    //
+    // MemberCode
+    // MemberName
+    // CompanyCode
+    // Number
+    // ===================================================
+
+    if (
+      finalUserTypeCode === 1 &&
+      !finalMemberNumber
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Member number is required.",
+      });
+    }
+
+    // ===================================================
+    // DATABASE POOL
+    // ===================================================
+
+    console.log(
+      "CONNECTING TO DATABASE..."
+    );
+
+    const pool =
       await getPool();
+
+    console.log(
+      "DATABASE CONNECTED"
+    );
+
+    // ===================================================
+    // TRANSACTION
+    // ===================================================
 
     transaction =
       new sql.Transaction(
@@ -173,9 +246,18 @@ router.post("/", async (req, res) => {
 
     await transaction.begin();
 
-    // =================================================
+    console.log(
+      "TRANSACTION STARTED"
+    );
+
+    // ===================================================
     // 1. CHECK COMPANY
-    // =================================================
+    // ===================================================
+
+    console.log(
+      "CHECKING COMPANY:",
+      finalCompanyCode
+    );
 
     const companyResult =
       await transaction
@@ -187,10 +269,13 @@ router.post("/", async (req, res) => {
         )
         .query(`
           SELECT TOP 1
-            CompanyCode
+            CompanyCode,
+            EDNO,
+            Header1,
+            Header2
           FROM tbl_Company
           WHERE CompanyCode =
-            @CompanyCode
+                @CompanyCode
         `);
 
     if (
@@ -198,6 +283,7 @@ router.post("/", async (req, res) => {
       companyResult.recordset.length === 0
     ) {
       await transaction.rollback();
+      transaction = null;
 
       return res.status(400).json({
         success: false,
@@ -206,15 +292,25 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // =================================================
+    console.log(
+      "COMPANY FOUND:",
+      companyResult.recordset[0]
+    );
+
+    // ===================================================
     // 2. CHECK MEMBER
-    // =================================================
+    // ===================================================
 
     let member = null;
 
     if (
       finalUserTypeCode === 1
     ) {
+      console.log(
+        "CHECKING MEMBER:",
+        finalMemberNumber
+      );
+
       const memberResult =
         await transaction
           .request()
@@ -230,30 +326,31 @@ router.post("/", async (req, res) => {
           )
           .query(`
             SELECT TOP 1
+
               MemberCode,
               MemberName,
               CompanyCode,
               Number
-            FROM tbl_Member
-            WHERE
-              CompanyCode =
-                @CompanyCode
 
-              AND
-              LTRIM(
-                RTRIM(
-                  CONVERT(
-                    VARCHAR(50),
-                    Number
+            FROM tbl_Member
+
+            WHERE CompanyCode =
+                  @CompanyCode
+
+              AND LTRIM(
+                    RTRIM(
+                      CONVERT(
+                        VARCHAR(50),
+                        Number
+                      )
+                    )
                   )
-                )
-              )
-              =
-              LTRIM(
-                RTRIM(
-                  @MemberNumber
-                )
-              )
+                  =
+                  LTRIM(
+                    RTRIM(
+                      @MemberNumber
+                    )
+                  )
           `);
 
       if (
@@ -261,6 +358,7 @@ router.post("/", async (req, res) => {
         memberResult.recordset.length === 0
       ) {
         await transaction.rollback();
+        transaction = null;
 
         return res.status(400).json({
           success: false,
@@ -273,62 +371,18 @@ router.post("/", async (req, res) => {
         memberResult.recordset[0];
 
       console.log(
-        "FOUND MEMBER:",
+        "MEMBER FOUND:",
         member
       );
     }
 
-    // =================================================
-    // 3. CHECK MOBILE DUPLICATE
-    // =================================================
+    // ===================================================
+    // 3. CHECK USERNAME DUPLICATE
+    // ===================================================
 
-    if (finalMobile) {
-      const duplicateMobile =
-        await transaction
-          .request()
-          .input(
-            "RegisteredMobileNumber",
-            sql.VarChar(50),
-            finalMobile
-          )
-          .query(`
-            SELECT TOP 1
-              UserCode,
-              UserName,
-              RegisteredMobileNumber,
-              CompanyCode
-            FROM tbl_User
-            WHERE
-              LTRIM(
-                RTRIM(
-                  RegisteredMobileNumber
-                )
-              )
-              =
-              LTRIM(
-                RTRIM(
-                  @RegisteredMobileNumber
-                )
-              )
-          `);
-
-      if (
-        duplicateMobile.recordset &&
-        duplicateMobile.recordset.length > 0
-      ) {
-        await transaction.rollback();
-
-        return res.status(409).json({
-          success: false,
-          message:
-            "A user with this registered mobile number already exists.",
-        });
-      }
-    }
-
-    // =================================================
-    // 4. CHECK USERNAME DUPLICATE
-    // =================================================
+    console.log(
+      "CHECKING USERNAME DUPLICATE..."
+    );
 
     const duplicateUserName =
       await transaction
@@ -346,21 +400,22 @@ router.post("/", async (req, res) => {
             UserName,
             CompanyCode
           FROM tbl_User
-          WHERE
-            LTRIM(
-              RTRIM(UserName)
-            )
-            =
-            LTRIM(
-              RTRIM(@UserName)
-            )
+          WHERE LTRIM(
+                  RTRIM(UserName)
+                )
+                =
+                LTRIM(
+                  RTRIM(@UserName)
+                )
         `);
 
     if (
       duplicateUserName.recordset &&
-      duplicateUserName.recordset.length > 0
+      duplicateUserName.recordset.length >
+        0
     ) {
       await transaction.rollback();
+      transaction = null;
 
       return res.status(409).json({
         success: false,
@@ -369,13 +424,73 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // =================================================
+    // ===================================================
+    // 4. CHECK MOBILE DUPLICATE
+    // ===================================================
+
+    if (finalMobile) {
+      console.log(
+        "CHECKING MOBILE DUPLICATE..."
+      );
+
+      const duplicateMobile =
+        await transaction
+          .request()
+          .input(
+            "RegisteredMobileNumber",
+            sql.VarChar(50),
+            finalMobile
+          )
+          .query(`
+            SELECT TOP 1
+
+              UserCode,
+              UserName,
+              RegisteredMobileNumber,
+              CompanyCode
+
+            FROM tbl_User
+
+            WHERE LTRIM(
+                    RTRIM(
+                      RegisteredMobileNumber
+                    )
+                  )
+                  =
+                  LTRIM(
+                    RTRIM(
+                      @RegisteredMobileNumber
+                    )
+                  )
+          `);
+
+      if (
+        duplicateMobile.recordset &&
+        duplicateMobile.recordset.length >
+          0
+      ) {
+        await transaction.rollback();
+        transaction = null;
+
+        return res.status(409).json({
+          success: false,
+          message:
+            "A user with this registered mobile number already exists.",
+        });
+      }
+    }
+
+    // ===================================================
     // 5. CHECK MEMBER ALREADY REGISTERED
-    // =================================================
+    // ===================================================
 
     if (
       finalUserTypeCode === 1
     ) {
+      console.log(
+        "CHECKING MEMBER ALREADY REGISTERED..."
+      );
+
       const existingMemberUser =
         await transaction
           .request()
@@ -391,33 +506,35 @@ router.post("/", async (req, res) => {
           )
           .query(`
             SELECT TOP 1
+
               UserCode,
               UserName,
               MemberNumber,
               CompanyCode
+
             FROM tbl_User
-            WHERE
-              CompanyCode =
-                @CompanyCode
 
-              AND
-              LTRIM(
-                RTRIM(MemberNumber)
-              )
-              =
-              LTRIM(
-                RTRIM(@MemberNumber)
-              )
+            WHERE CompanyCode =
+                  @CompanyCode
 
-              AND
-              UserTypeCode = 1
+              AND LTRIM(
+                    RTRIM(MemberNumber)
+                  )
+                  =
+                  LTRIM(
+                    RTRIM(@MemberNumber)
+                  )
+
+              AND UserTypeCode = 1
           `);
 
       if (
         existingMemberUser.recordset &&
-        existingMemberUser.recordset.length > 0
+        existingMemberUser.recordset.length >
+          0
       ) {
         await transaction.rollback();
+        transaction = null;
 
         return res.status(409).json({
           success: false,
@@ -427,11 +544,15 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // =================================================
+    // ===================================================
     // 6. GENERATE USER CODE
     //
     // UserCode is NOT IDENTITY.
-    // =================================================
+    // ===================================================
+
+    console.log(
+      "GENERATING USER CODE..."
+    );
 
     const userCodeResult =
       await transaction
@@ -455,17 +576,13 @@ router.post("/", async (req, res) => {
           .NextUserCode
       );
 
-    console.log(
-      "NEXT USER CODE:",
-      nextUserCode
-    );
-
     if (
       !Number.isInteger(
         nextUserCode
       )
     ) {
       await transaction.rollback();
+      transaction = null;
 
       return res.status(500).json({
         success: false,
@@ -474,9 +591,18 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // =================================================
+    console.log(
+      "NEXT USER CODE:",
+      nextUserCode
+    );
+
+    // ===================================================
     // 7. INSERT USER
-    // =================================================
+    // ===================================================
+
+    console.log(
+      "INSERTING USER..."
+    );
 
     const insertResult =
       await transaction
@@ -513,7 +639,8 @@ router.post("/", async (req, res) => {
         .input(
           "RegisteredMobileNumber",
           sql.VarChar(50),
-          finalMobile || null
+          finalMobile ||
+            null
         )
 
         .input(
@@ -542,6 +669,7 @@ router.post("/", async (req, res) => {
             MemberNumber,
             CompanyCode
           )
+
           VALUES
           (
             @UserCode,
@@ -559,24 +687,40 @@ router.post("/", async (req, res) => {
             UserCode,
             UserTypeCode,
             UserName,
+            C_Date,
+            E_Date,
             RegisteredMobileNumber,
             MemberNumber,
-            CompanyCode,
-            C_Date
+            CompanyCode
+
           FROM tbl_User
+
           WHERE UserCode =
-            @UserCode;
+                @UserCode;
         `);
 
-    // =================================================
+    console.log(
+      "INSERT RESULT:",
+      insertResult.recordset
+    );
+
+    // ===================================================
     // 8. COMMIT
-    // =================================================
+    // ===================================================
 
     await transaction.commit();
+    transaction = null;
+
+    console.log(
+      "TRANSACTION COMMITTED"
+    );
 
     const createdUser =
-      insertResult.recordset?.[0] ||
-      null;
+      insertResult.recordset &&
+      insertResult.recordset.length >
+        0
+        ? insertResult.recordset[0]
+        : null;
 
     console.log("======================================");
     console.log(
@@ -592,20 +736,49 @@ router.post("/", async (req, res) => {
       success: true,
       message:
         "User registered successfully.",
-      user: createdUser,
-      member: member,
+      user:
+        createdUser,
+      member:
+        member,
     });
   } catch (error) {
     console.error("======================================");
     console.error(
       "REGISTRATION DATABASE ERROR"
     );
-    console.error(error);
+    console.error(
+      "ERROR NAME:",
+      error?.name
+    );
+    console.error(
+      "ERROR MESSAGE:",
+      error?.message
+    );
+    console.error(
+      "ERROR NUMBER:",
+      error?.number
+    );
+    console.error(
+      "ERROR CODE:",
+      error?.code
+    );
+    console.error(
+      "FULL ERROR:",
+      error
+    );
     console.error("======================================");
+
+    // ===================================================
+    // ROLLBACK
+    // ===================================================
 
     try {
       if (transaction) {
         await transaction.rollback();
+
+        console.log(
+          "TRANSACTION ROLLED BACK"
+        );
       }
     } catch (rollbackError) {
       console.error(
