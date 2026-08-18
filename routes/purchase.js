@@ -1,1105 +1,590 @@
-const express = require("express");
-const router = express.Router();
-const sql = require("mssql");
-
-const { getPool } = require("../db");
-
 // =====================================================
-// CONFIG
+// API PURCHASE
+// Purchase Companies / Purchase Records
 // =====================================================
 
-const SECRETARY_USER_TYPE_CODE = 2;
-const DEFAULT_LOOKBACK_DAYS = 31;
+const BASE_URL =
+  "https://iplmobiledairybackend.onrender.com/api";
 
 // =====================================================
-// NORMALIZE ROLE
+// HANDLE API RESPONSE
 // =====================================================
 
-function normalizeRole(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
+const handleResponse = async (response) => {
+  const text = await response.text();
+
+  let data = {};
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {
+      message: text || "Invalid server response",
+    };
+  }
+
+  console.log("======================================");
+  console.log("API RESPONSE STATUS:", response.status);
+  console.log("API RESPONSE BODY:", data);
+  console.log("======================================");
+
+  if (!response.ok) {
+    console.error("======================================");
+    console.error("API ERROR");
+    console.error("STATUS:", response.status);
+    console.error("STATUS TEXT:", response.statusText);
+    console.error("RESPONSE:", data);
+    console.error("======================================");
+
+    throw new Error(
+      data?.message ||
+        data?.error ||
+        `Request failed with status ${response.status}`
+    );
+  }
+
+  return data;
+};
 
 // =====================================================
 // VALUE CHECK
 // =====================================================
 
-function hasValue(value) {
+const hasValue = (value) => {
   return (
     value !== undefined &&
     value !== null &&
     String(value).trim() !== ""
   );
-}
+};
 
 // =====================================================
-// DEFAULT FROM DATE
+// NORMALIZE VALUE
 // =====================================================
 
-function getDefaultFromDate() {
-  const d = new Date();
+const cleanValue = (value) => {
+  if (!hasValue(value)) {
+    return "";
+  }
 
-  d.setDate(
-    d.getDate() - DEFAULT_LOOKBACK_DAYS
+  return String(value).trim();
+};
+
+// =====================================================
+// BUILD QUERY
+// =====================================================
+
+const buildQueryString = (params = {}) => {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(
+    ([key, value]) => {
+      if (hasValue(value)) {
+        query.append(
+          key,
+          cleanValue(value)
+        );
+      }
+    }
   );
 
-  return d.toISOString().slice(0, 10);
-}
+  return query.toString();
+};
 
 // =====================================================
-// TODAY
+// PURCHASE API
 // =====================================================
 
-function getToday() {
-  return new Date()
-    .toISOString()
-    .slice(0, 10);
-}
+export const apiPurchase = {
 
-// =====================================================
-// GET LOGGED USER
-// =====================================================
+  // ===================================================
+  // GET PURCHASE SOCIETIES
+  //
+  // GET /api/purchase-companies
+  //
+  // REQUIRED:
+  //   userCode
+  //
+  // BACKEND ACCESS:
+  //
+  // ADMIN / MANAGER
+  //   -> ALL SOCIETIES
+  //
+  // SECRETARY
+  //   -> REGISTERED SOCIETY
+  //
+  // MEMBER
+  //   -> REGISTERED SOCIETY
+  // ===================================================
 
-async function getLoggedUser(pool, userCode) {
-  const result = await pool
-    .request()
-    .input(
-      "UserCode",
-      sql.Int,
-      Number(userCode)
-    )
-    .query(`
-      SELECT
-
-        u.UserCode,
-        u.UserTypeCode,
-        u.UserName,
-        u.CompanyCode,
-        u.MemberNumber,
-        u.RegisteredMobileNumber,
-
-        t.UserTypeName,
-
-        RTRIM(
-          ISNULL(c.Header1, '') + ' ' +
-          ISNULL(c.Header2, '')
-        ) AS CompanyName
-
-      FROM tbl_User u
-
-      INNER JOIN tbl_UserType t
-        ON u.UserTypeCode = t.UserTypeCode
-
-      LEFT JOIN tbl_Company c
-        ON u.CompanyCode = c.CompanyCode
-
-      WHERE
-        u.UserCode = @UserCode
-    `);
-
-  if (!result.recordset.length) {
-    return null;
-  }
-
-  return result.recordset[0];
-}
-
-// =====================================================
-// GET PURCHASE COMPANIES
-//
-// ADMIN / MANAGER
-//     -> ALL SOCIETIES
-//
-// SECRETARY
-//     -> ONLY REGISTERED SOCIETY
-//
-// NORMAL MEMBER
-//     -> ONLY REGISTERED SOCIETY
-// =====================================================
-
-router.get(
-  "/purchase-companies",
-  async (req, res) => {
+  getPurchaseCompanies: async (
+    userCode
+  ) => {
     try {
-      const { userCode } = req.query;
 
       // =================================================
-      // VALIDATE USER
+      // VALIDATE USER CODE
       // =================================================
 
       if (!hasValue(userCode)) {
-        return res.status(400).json({
-          success: false,
-          message: "userCode is required.",
+        throw new Error(
+          "userCode is required to load purchase societies."
+        );
+      }
+
+      // =================================================
+      // QUERY
+      // =================================================
+
+      const queryString =
+        buildQueryString({
+          userCode,
         });
-      }
-
-      const numericUserCode = Number(userCode);
-
-      if (
-        !Number.isInteger(numericUserCode) ||
-        numericUserCode <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid userCode.",
-        });
-      }
 
       // =================================================
-      // DB
+      // URL
       // =================================================
 
-      const pool = await getPool();
-
-      // =================================================
-      // USER
-      // =================================================
-
-      const user = await getLoggedUser(
-        pool,
-        numericUserCode
-      );
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found.",
-        });
-      }
-
-      // =================================================
-      // ROLE
-      // =================================================
-
-      const role = normalizeRole(
-        user.UserTypeName
-      );
-
-      const userTypeCode = Number(
-        user.UserTypeCode
-      );
-
-      const isSecretary =
-        userTypeCode === SECRETARY_USER_TYPE_CODE ||
-        role === "secretary" ||
-        role === "secretory" ||
-        role === "secratory" ||
-        role === "secretery";
-
-      const isAdmin =
-        role === "admin";
-
-      const isManager =
-        role === "manager";
-
-      // =================================================
-      // IMPORTANT
-      //
-      // ONLY ADMIN / MANAGER HAVE ALL SOCIETY ACCESS
-      //
-      // SECRETARY DOES NOT HAVE ALL SOCIETY ACCESS
-      // =================================================
-
-      const canViewAllSocieties =
-        isAdmin ||
-        isManager;
-
-      // =================================================
-      // WHERE
-      // =================================================
-
-      const request = pool.request();
-
-      let where = `
-        WHERE
-          LEN(ISNULL(c.MobileNo, '')) = 10
-
-          AND c.EDNO > 0
-      `;
-
-      // =================================================
-      // SECRETARY / NORMAL MEMBER
-      //
-      // FORCE REGISTERED SOCIETY
-      // =================================================
-
-      if (!canViewAllSocieties) {
-
-        if (
-          user.CompanyCode === null ||
-          user.CompanyCode === undefined ||
-          Number(user.CompanyCode) <= 0
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "User has no registered society.",
-          });
-        }
-
-        request.input(
-          "RegisteredCompanyCode",
-          sql.Int,
-          Number(user.CompanyCode)
-        );
-
-        where += `
-          AND c.CompanyCode =
-              @RegisteredCompanyCode
-        `;
-      }
-
-      // =================================================
-      // FETCH SOCIETY
-      // =================================================
-
-      const result = await request.query(`
-        SELECT
-
-          c.CompanyCode,
-          c.EDNO,
-          c.Header1,
-          c.Header2,
-          c.MobileNo
-
-        FROM tbl_Company c
-
-        ${where}
-
-        ORDER BY
-          c.CompanyCode
-      `);
-
-      // =================================================
-      // FORMAT
-      // =================================================
-
-      const records =
-        result.recordset.map((row) => ({
-          CompanyCode: row.CompanyCode,
-
-          EDNO: row.EDNO,
-
-          CompanyName:
-            `${row.Header1 || ""} ${
-              row.Header2 || ""
-            }`.trim(),
-
-          MobileNo: row.MobileNo,
-        }));
-
-      // =================================================
-      // RESPONSE
-      // =================================================
-
-      return res.status(200).json({
-
-        success: true,
-
-        isSecretary,
-
-        isAdmin,
-
-        isManager,
-
-        canViewAllSocieties,
-
-        userCompanyCode:
-          user.CompanyCode,
-
-        records,
-      });
-
-    } catch (err) {
-
-      console.error(
-        "PURCHASE COMPANIES ERROR:",
-        err
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          err.message ||
-          "Failed to load societies.",
-      });
-    }
-  }
-);
-
-// =====================================================
-// GET PURCHASES
-//
-// ADMIN / MANAGER
-//     -> ALL SOCIETIES
-//     -> OPTIONAL SOCIETY
-//     -> OPTIONAL MEMBER
-//
-// SECRETARY
-//     -> ONLY REGISTERED SOCIETY
-//     -> OPTIONAL MEMBER
-//
-// NORMAL MEMBER
-//     -> ONLY REGISTERED SOCIETY
-//     -> ONLY REGISTERED MEMBER
-// =====================================================
-
-router.get(
-  "/purchases",
-  async (req, res) => {
-
-    try {
-
-      const {
-        userCode,
-        companyCode,
-        memberNumber,
-        fromDate,
-        toDate,
-      } = req.query;
-
-      console.log(
-        "======================================"
-      );
-
-      console.log(
-        "PURCHASE REQUEST"
-      );
-
-      console.log(
-        req.query
-      );
-
-      console.log(
-        "======================================"
-      );
-
-      // =================================================
-      // USER CODE
-      // =================================================
-
-      if (!hasValue(userCode)) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "userCode is required.",
-        });
-      }
-
-      const numericUserCode =
-        Number(userCode);
-
-      if (
-        !Number.isInteger(
-          numericUserCode
-        ) ||
-        numericUserCode <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid userCode.",
-        });
-      }
-
-      // =================================================
-      // DB
-      // =================================================
-
-      const pool = await getPool();
-
-      // =================================================
-      // USER
-      // =================================================
-
-      const me =
-        await getLoggedUser(
-          pool,
-          numericUserCode
-        );
-
-      if (!me) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "User not found.",
-        });
-      }
-
-      // =================================================
-      // ROLE
-      // =================================================
-
-      const role =
-        normalizeRole(
-          me.UserTypeName
-        );
-
-      const userTypeCode =
-        Number(
-          me.UserTypeCode
-        );
-
-      const isSecretary =
-        userTypeCode ===
-          SECRETARY_USER_TYPE_CODE ||
-        role === "secretary" ||
-        role === "secretory" ||
-        role === "secratory" ||
-        role === "secretery";
-
-      const isAdmin =
-        role === "admin";
-
-      const isManager =
-        role === "manager";
-
-      // =================================================
-      // ACCESS
-      //
-      // ONLY ADMIN / MANAGER:
-      // ALL SOCIETIES
-      //
-      // SECRETARY:
-      // OWN SOCIETY ONLY
-      //
-      // MEMBER:
-      // OWN SOCIETY ONLY
-      // =================================================
-
-      const canViewAllSocieties =
-        isAdmin ||
-        isManager;
-
-      const canViewAllMembers =
-        isAdmin ||
-        isManager ||
-        isSecretary;
-
-      // =================================================
-      // REQUEST
-      // =================================================
-
-      const request =
-        pool.request();
-
-      // =================================================
-      // COMPANY
-      // =================================================
-
-      let selectedCompanyCode = null;
-
-      // =================================================
-      // ADMIN / MANAGER
-      //
-      // They can select any society.
-      //
-      // No companyCode = ALL societies.
-      // =================================================
-
-      if (
-        isAdmin ||
-        isManager
-      ) {
-
-        if (hasValue(companyCode)) {
-
-          selectedCompanyCode =
-            Number(companyCode);
-
-          if (
-            !Number.isInteger(
-              selectedCompanyCode
-            ) ||
-            selectedCompanyCode <= 0
-          ) {
-            return res.status(400).json({
-              success: false,
-              message:
-                "Invalid companyCode.",
-            });
-          }
-
-          request.input(
-            "CompanyCode",
-            sql.Int,
-            selectedCompanyCode
-          );
-        }
-      }
-
-      // =================================================
-      // SECRETARY
-      //
-      // IMPORTANT:
-      //
-      // NEVER USE FRONTEND companyCode.
-      //
-      // ALWAYS USE:
-      // me.CompanyCode
-      //
-      // Therefore Secretary can ONLY
-      // see registered society.
-      // =================================================
-
-      else if (isSecretary) {
-
-        selectedCompanyCode =
-          Number(
-            me.CompanyCode
-          );
-
-        if (
-          !Number.isInteger(
-            selectedCompanyCode
-          ) ||
-          selectedCompanyCode <= 0
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "Secretary has no registered society.",
-          });
-        }
-
-        request.input(
-          "CompanyCode",
-          sql.Int,
-          selectedCompanyCode
-        );
-
-        console.log(
-          "SECRETARY REGISTERED COMPANY:",
-          selectedCompanyCode
-        );
-
-        // IMPORTANT:
-        // Frontend companyCode is ignored.
-      }
-
-      // =================================================
-      // NORMAL MEMBER
-      // =================================================
-
-      else {
-
-        selectedCompanyCode =
-          Number(
-            me.CompanyCode
-          );
-
-        if (
-          !Number.isInteger(
-            selectedCompanyCode
-          ) ||
-          selectedCompanyCode <= 0
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "Member has no registered society.",
-          });
-        }
-
-        request.input(
-          "CompanyCode",
-          sql.Int,
-          selectedCompanyCode
-        );
-      }
-
-      // =================================================
-      // MEMBER FILTER
-      // =================================================
-
-      let selectedMemberNumber = null;
-
-      // =================================================
-      // ADMIN / MANAGER / SECRETARY
-      //
-      // OPTIONAL MEMBER
-      // =================================================
-
-      if (canViewAllMembers) {
-
-        if (
-          hasValue(memberNumber)
-        ) {
-
-          selectedMemberNumber =
-            String(
-              memberNumber
-            ).trim();
-
-          request.input(
-            "MemberNumber",
-            sql.VarChar(50),
-            selectedMemberNumber
-          );
-        }
-      }
-
-      // =================================================
-      // NORMAL MEMBER
-      //
-      // FORCE REGISTERED MEMBER
-      // =================================================
-
-      else {
-
-        if (
-          !hasValue(
-            me.MemberNumber
-          )
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "Member has no registered member number.",
-          });
-        }
-
-        selectedMemberNumber =
-          String(
-            me.MemberNumber
-          ).trim();
-
-        request.input(
-          "MemberNumber",
-          sql.VarChar(50),
-          selectedMemberNumber
-        );
-      }
-
-      // =================================================
-      // DATE
-      // =================================================
-
-      const effectiveFromDate =
-        hasValue(fromDate)
-          ? String(fromDate).trim()
-          : getDefaultFromDate();
-
-      const effectiveToDate =
-        hasValue(toDate)
-          ? String(toDate).trim()
-          : getToday();
-
-      request.input(
-        "FromDate",
-        sql.Date,
-        effectiveFromDate
-      );
-
-      request.input(
-        "ToDate",
-        sql.Date,
-        effectiveToDate
-      );
+      const url =
+        `${BASE_URL}/purchase-companies` +
+        `?${queryString}`;
 
       // =================================================
       // DEBUG
       // =================================================
 
-      console.log(
-        "======================================"
-      );
-
-      console.log(
-        "USER CODE:",
-        me.UserCode
-      );
-
-      console.log(
-        "USER TYPE:",
-        me.UserTypeName
-      );
-
-      console.log(
-        "USER TYPE CODE:",
-        me.UserTypeCode
-      );
-
-      console.log(
-        "REGISTERED COMPANY:",
-        me.CompanyCode
-      );
-
-      console.log(
-        "FRONTEND COMPANY:",
-        companyCode
-      );
-
-      console.log(
-        "FINAL COMPANY:",
-        selectedCompanyCode
-      );
-
-      console.log(
-        "MEMBER:",
-        selectedMemberNumber
-      );
-
-      console.log(
-        "FROM:",
-        effectiveFromDate
-      );
-
-      console.log(
-        "TO:",
-        effectiveToDate
-      );
-
-      console.log(
-        "ALL SOCIETIES:",
-        canViewAllSocieties
-      );
-
-      console.log(
-        "ALL MEMBERS:",
-        canViewAllMembers
-      );
-
-      console.log(
-        "======================================"
-      );
+      console.log("======================================");
+      console.log("GET PURCHASE COMPANIES");
+      console.log("USER CODE:", userCode);
+      console.log("QUERY STRING:", queryString);
+      console.log("REQUEST URL:", url);
+      console.log("======================================");
 
       // =================================================
-      // WHERE
+      // REQUEST
       // =================================================
 
-      let where = `
-        WHERE
+      const response =
+        await fetch(
+          url,
+          {
+            method: "GET",
 
-          p.PurchaseDate >= @FromDate
-
-          AND p.PurchaseDate < DATEADD(
-            DAY,
-            1,
-            @ToDate
-          )
-      `;
-
-      // =================================================
-      // COMPANY FILTER
-      // =================================================
-
-      if (
-        isAdmin ||
-        isManager
-      ) {
-
-        // Admin / Manager
-        // Company optional
-
-        if (
-          selectedCompanyCode !== null
-        ) {
-
-          where += `
-            AND p.CompanyCode =
-                @CompanyCode
-          `;
-        }
-
-      } else {
-
-        // Secretary / Member
-        //
-        // ALWAYS registered company
-
-        where += `
-          AND p.CompanyCode =
-              @CompanyCode
-        `;
-      }
-
-      // =================================================
-      // MEMBER FILTER
-      // =================================================
-
-      if (
-        selectedMemberNumber !== null
-      ) {
-
-        where += `
-          AND LTRIM(RTRIM(
-            CONVERT(
-              varchar(50),
-              p.Number
-            )
-          )) =
-          LTRIM(RTRIM(
-            @MemberNumber
-          ))
-        `;
-      }
-
-      // =================================================
-      // PURCHASE QUERY
-      // =================================================
-
-      const result =
-        await request.query(`
-
-          SELECT
-
-            p.PurchaseNumber
-              AS PurchaseID,
-
-            p.PurchaseDate
-              AS PurchaseDate,
-
-            CASE
-
-              WHEN p.Shift = 'M'
-                THEN 'Morning'
-
-              WHEN p.Shift = 'E'
-                THEN 'Evening'
-
-              ELSE ISNULL(
-                p.Shift,
-                '-'
-              )
-
-            END AS ShiftName,
-
-            p.MemberCode,
-
-            p.Number
-              AS MemberNumber,
-
-            m.MemberName,
-
-            m.MobileNo
-              AS MemberMobileNo,
-
-            p.Test
-              AS FatPercent,
-
-            p.SNF
-              AS SNFPercent,
-
-            p.Qty
-              AS QtyLtr,
-
-            p.Rate,
-
-            p.Amount,
-
-            p.CompanyCode
-
-          FROM tbl_Purchase p
-
-          LEFT JOIN tbl_Member m
-
-            ON
-              p.MemberCode =
-                m.MemberCode
-
-            AND
-              p.CompanyCode =
-                m.CompanyCode
-
-          ${where}
-
-          ORDER BY
-
-            p.PurchaseDate DESC,
-
-            CASE
-
-              WHEN p.Shift = 'M'
-                THEN 1
-
-              WHEN p.Shift = 'E'
-                THEN 2
-
-              ELSE 3
-
-            END,
-
-            p.PurchaseNumber DESC
-
-        `);
-
-      // =================================================
-      // RECORDS
-      // =================================================
-
-      const records =
-        result.recordset || [];
-
-      // =================================================
-      // SUMMARY
-      // =================================================
-
-      const totalQty =
-        records.reduce(
-          (sum, row) =>
-            sum +
-            Number(
-              row.QtyLtr || 0
-            ),
-          0
-        );
-
-      const totalAmount =
-        records.reduce(
-          (sum, row) =>
-            sum +
-            Number(
-              row.Amount || 0
-            ),
-          0
-        );
-
-      const fatSum =
-        records.reduce(
-          (sum, row) =>
-            sum +
-            Number(
-              row.FatPercent || 0
-            ),
-          0
-        );
-
-      const snfSum =
-        records.reduce(
-          (sum, row) =>
-            sum +
-            Number(
-              row.SNFPercent || 0
-            ),
-          0
+            headers: {
+              Accept:
+                "application/json",
+            },
+          }
         );
 
       // =================================================
       // RESPONSE
       // =================================================
 
-      return res.status(200).json({
+      const result =
+        await handleResponse(
+          response
+        );
 
-        success: true,
+      // =================================================
+      // DEBUG
+      // =================================================
 
-        userCode:
-          me.UserCode,
+      console.log("======================================");
+      console.log(
+        "PURCHASE COMPANIES RESPONSE:"
+      );
+      console.log(result);
 
-        userName:
-          me.UserName,
-
-        role:
-          me.UserTypeName,
-
-        userTypeCode:
-          me.UserTypeCode,
-
-        isSecretary,
-
-        isAdmin,
-
-        isManager,
-
-        canViewAllSocieties,
-
-        canViewAllMembers,
-
-        fullAccess:
-          canViewAllSocieties,
-
-        userCompanyCode:
-          me.CompanyCode,
-
-        userCompanyName:
-          me.CompanyName || "",
-
-        userMemberNumber:
-          me.MemberNumber || null,
-
-        registeredMobileNumber:
-          me.RegisteredMobileNumber || "",
-
-        selectedCompanyCode,
-
-        selectedMemberNumber,
-
-        fromDate:
-          effectiveFromDate,
-
-        toDate:
-          effectiveToDate,
-
-        records,
-
-        summary: {
-
-          count:
-            records.length,
-
-          totalQty:
-            Number(
-              totalQty.toFixed(2)
-            ),
-
-          totalAmount:
-            Number(
-              totalAmount.toFixed(2)
-            ),
-
-          avgFat:
-            records.length
-              ? Number(
-                  (
-                    fatSum /
-                    records.length
-                  ).toFixed(2)
-                )
-              : 0,
-
-          avgSnf:
-            records.length
-              ? Number(
-                  (
-                    snfSum /
-                    records.length
-                  ).toFixed(2)
-                )
-              : 0,
-        },
-      });
-
-    } catch (err) {
-
-      console.error(
-        "======================================"
+      console.log(
+        "COMPANY COUNT:",
+        Array.isArray(result)
+          ? result.length
+          : Array.isArray(
+              result?.companies
+            )
+          ? result.companies.length
+          : 0
       );
 
+      console.log("======================================");
+
+      return result;
+
+    } catch (error) {
+
+      console.error("======================================");
       console.error(
-        "PURCHASE API ERROR"
+        "GET PURCHASE COMPANIES ERROR:"
       );
+      console.error(error);
+      console.error("======================================");
 
-      console.error(err);
-
-      console.error(
-        "======================================"
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          err.message ||
-          "Failed to load purchase data.",
-      });
+      throw error;
     }
-  }
-);
+  },
+
+  // ===================================================
+  // GET PURCHASES
+  //
+  // GET /api/purchases
+  //
+  // REQUIRED:
+  //   userCode
+  //
+  // OPTIONAL:
+  //   companyCode
+  //   memberNumber
+  //   fromDate
+  //   toDate
+  //
+  // EMPTY DATE:
+  //   Backend should use:
+  //   LAST 31 DAYS -> TODAY
+  //
+  // ACCESS:
+  //
+  // ADMIN / MANAGER
+  //   -> ALL SOCIETIES
+  //
+  // SECRETARY
+  //   -> OWN SOCIETY
+  //
+  // MEMBER
+  //   -> OWN SOCIETY + OWN MEMBER
+  // ===================================================
+
+  getPurchases: async (
+    params = {}
+  ) => {
+    try {
+
+      // =================================================
+      // VALIDATE PARAMS
+      // =================================================
+
+      if (
+        !params ||
+        typeof params !== "object"
+      ) {
+        throw new Error(
+          "Purchase parameters are required."
+        );
+      }
+
+      // =================================================
+      // USER CODE REQUIRED
+      // =================================================
+
+      if (!hasValue(params.userCode)) {
+        throw new Error(
+          "userCode is required."
+        );
+      }
+
+      // =================================================
+      // CLEAN PARAMETERS
+      // =================================================
+
+      const userCode =
+        cleanValue(
+          params.userCode
+        );
+
+      const companyCode =
+        cleanValue(
+          params.companyCode
+        );
+
+      const memberNumber =
+        cleanValue(
+          params.memberNumber
+        );
+
+      let fromDate =
+        cleanValue(
+          params.fromDate
+        );
+
+      let toDate =
+        cleanValue(
+          params.toDate
+        );
+
+      // =================================================
+      // HANDLE NULL DATE STRINGS
+      //
+      // Do not send:
+      // "null"
+      //
+      // Backend will apply:
+      // LAST 31 DAYS -> TODAY
+      // =================================================
+
+      if (
+        fromDate.toLowerCase() ===
+        "null"
+      ) {
+        fromDate = "";
+      }
+
+      if (
+        toDate.toLowerCase() ===
+        "null"
+      ) {
+        toDate = "";
+      }
+
+      // =================================================
+      // QUERY PARAMETERS
+      // =================================================
+
+      const queryParams = {
+        userCode,
+      };
+
+      // =================================================
+      // COMPANY
+      // =================================================
+
+      if (hasValue(companyCode)) {
+        queryParams.companyCode =
+          companyCode;
+      }
+
+      // =================================================
+      // MEMBER
+      // =================================================
+
+      if (hasValue(memberNumber)) {
+        queryParams.memberNumber =
+          memberNumber;
+      }
+
+      // =================================================
+      // FROM DATE
+      // =================================================
+
+      if (hasValue(fromDate)) {
+        queryParams.fromDate =
+          fromDate;
+      }
+
+      // =================================================
+      // TO DATE
+      // =================================================
+
+      if (hasValue(toDate)) {
+        queryParams.toDate =
+          toDate;
+      }
+
+      // =================================================
+      // QUERY STRING
+      // =================================================
+
+      const queryString =
+        buildQueryString(
+          queryParams
+        );
+
+      // =================================================
+      // URL
+      // =================================================
+
+      const url =
+        `${BASE_URL}/purchases` +
+        `?${queryString}`;
+
+      // =================================================
+      // DEBUG
+      // =================================================
+
+      console.log("======================================");
+      console.log("GET PURCHASES");
+      console.log("======================================");
+
+      console.log(
+        "USER CODE:",
+        userCode
+      );
+
+      console.log(
+        "COMPANY CODE:",
+        companyCode || "(ALL / BACKEND DECIDES)"
+      );
+
+      console.log(
+        "MEMBER NUMBER:",
+        memberNumber || "(ALL / BACKEND DECIDES)"
+      );
+
+      console.log(
+        "FROM DATE:",
+        fromDate || "(BACKEND DEFAULT)"
+      );
+
+      console.log(
+        "TO DATE:",
+        toDate || "(BACKEND DEFAULT)"
+      );
+
+      console.log(
+        "QUERY PARAMETERS:",
+        queryParams
+      );
+
+      console.log(
+        "QUERY STRING:",
+        queryString
+      );
+
+      console.log(
+        "REQUEST URL:",
+        url
+      );
+
+      console.log("======================================");
+
+      // =================================================
+      // REQUEST
+      // =================================================
+
+      const response =
+        await fetch(
+          url,
+          {
+            method: "GET",
+
+            headers: {
+              Accept:
+                "application/json",
+            },
+          }
+        );
+
+      // =================================================
+      // RESPONSE
+      // =================================================
+
+      const result =
+        await handleResponse(
+          response
+        );
+
+      // =================================================
+      // NORMALIZE RECORDS
+      // =================================================
+
+      const records =
+        Array.isArray(
+          result?.records
+        )
+          ? result.records
+          : Array.isArray(result)
+          ? result
+          : [];
+
+      // =================================================
+      // DEBUG RESPONSE
+      // =================================================
+
+      console.log("======================================");
+      console.log(
+        "PURCHASE API RESPONSE"
+      );
+      console.log("======================================");
+
+      console.log(
+        "FULL RESULT:",
+        result
+      );
+
+      console.log(
+        "RECORD COUNT:",
+        records.length
+      );
+
+      console.log(
+        "SUMMARY:",
+        result?.summary
+      );
+
+      console.log(
+        "REGISTERED SOCIETY CODE:",
+        result?.userCompanyCode
+      );
+
+      console.log(
+        "REGISTERED MEMBER NUMBER:",
+        result?.userMemberNumber
+      );
+
+      console.log(
+        "USER TYPE:",
+        result?.userTypeName
+      );
+
+      console.log(
+        "USER TYPE CODE:",
+        result?.userTypeCode
+      );
+
+      console.log(
+        "IS SECRETARY:",
+        result?.isSecretary
+      );
+
+      console.log(
+        "IS MEMBER:",
+        result?.isMember
+      );
+
+      console.log(
+        "IS ADMIN:",
+        result?.isAdmin
+      );
+
+      console.log(
+        "IS MANAGER:",
+        result?.isManager
+      );
+
+      console.log(
+        "CAN VIEW ALL SOCIETIES:",
+        result?.canViewAllSocieties
+      );
+
+      console.log(
+        "CAN VIEW ALL MEMBERS:",
+        result?.canViewAllMembers
+      );
+
+      console.log(
+        "======================================");
+
+      // =================================================
+      // RETURN
+      // =================================================
+
+      return result;
+
+    } catch (error) {
+
+      console.error("======================================");
+      console.error(
+        "GET PURCHASES ERROR:"
+      );
+      console.error(error);
+      console.error("======================================");
+
+      throw error;
+    }
+  },
+};
 
 // =====================================================
-// EXPORT
+// DEFAULT EXPORT
 // =====================================================
 
-module.exports = router;
+export default apiPurchase;

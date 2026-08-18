@@ -1,0 +1,5 @@
+select  purchasenumber as purchaseId,Purchasedate,shift as shiftName,tbl_Purchase.MemberCode,tbl_purchase.number as MemberNumber,
+		tbl_Member.MemberName,Test as FatPercent,SNF as SNFPercent,Qty as QtyLtr,Rate,Amount,tbl_purchase.CompanyCode from tbl_Purchase
+		left outer join tbl_Member on tbl_Purchase.membercode=tbl_Member.MemberCode and tbl_Purchase.companycode=tbl_member.companycode
+		where tbl_purchase.companycode=@CompanyCode and purchasedate>=@Fromdate and purchasedate<=@ToDate
+and tbl_purchase.number=isnull(@MemberNumber,tbl_Purchase.Number)

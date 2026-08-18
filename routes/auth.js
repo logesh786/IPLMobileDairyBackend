@@ -1,10 +1,12 @@
 const express = require("express");
+const sql = require("mssql");
+
 const router = express.Router();
 
 const { getPool } = require("../db");
 
 // =====================================================
-// HELPER
+// HELPERS
 // =====================================================
 
 const hasValue = (value) => {
@@ -15,141 +17,30 @@ const hasValue = (value) => {
   );
 };
 
-const normalize = (value) => {
-  return String(value || "").trim().toLowerCase();
+const cleanString = (value) => {
+  if (!hasValue(value)) {
+    return "";
+  }
+
+  return String(value).trim();
 };
-
-// =====================================================
-// GET USER TYPES
-// GET /api/usertypes
-// =====================================================
-
-router.get("/usertypes", async (req, res) => {
-  try {
-    console.log("======================================");
-    console.log("GET /api/usertypes");
-    console.log("======================================");
-
-    const pool = await getPool();
-
-    const result = await pool.request().query(`
-      SELECT
-        UserTypeCode,
-        UserTypeName
-      FROM tbl_UserType
-      ORDER BY UserTypeCode
-    `);
-
-    console.log("USER TYPES:", result.recordset);
-
-    return res.status(200).json(result.recordset);
-
-  } catch (error) {
-    console.error("GET /api/usertypes ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to load user types",
-      error: error.message,
-    });
-  }
-});
-
-// =====================================================
-// GET COMPANIES / SOCIETIES
-// GET /api/Company
-// =====================================================
-
-router.get("/Company", async (req, res) => {
-  try {
-    console.log("======================================");
-    console.log("GET /api/Company");
-    console.log("======================================");
-
-    const pool = await getPool();
-
-    const result = await pool.request().query(`
-      SELECT
-        CompanyCode,
-        EDNO,
-        Header1,
-        Header2,
-        MobileNo
-      FROM tbl_Company
-      WHERE
-        LEN(ISNULL(MobileNo, '')) = 10
-        AND EDNO > 0
-      ORDER BY CompanyCode
-    `);
-
-    const companies = result.recordset.map((row) => ({
-      CompanyCode: row.CompanyCode,
-      EDNO: row.EDNO,
-
-      CompanyName:
-        `${row.Header1 || ""} ${row.Header2 || ""}`.trim(),
-
-      MobileNo: row.MobileNo,
-    }));
-
-    console.log("COMPANIES:", companies.length);
-
-    return res.status(200).json(companies);
-
-  } catch (error) {
-    console.error("GET /api/Company ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to load companies",
-      error: error.message,
-    });
-  }
-});
 
 // =====================================================
 // REGISTER
 // POST /api/register
-//
-// MEMBER:
-//
-// userTypeId
-// CompanyCode
-// MemberNumber
-// RegisteredMobileNumber
-// userName
-// password
-//
-// SECRETARY:
-//
-// userTypeId
-// CompanyCode
-// RegisteredMobileNumber
-// userName
-// password
-//
 // =====================================================
 
 router.post("/register", async (req, res) => {
+  let transaction;
+
   try {
     console.log("======================================");
     console.log("POST /api/register");
     console.log("REGISTER REQUEST");
     console.log("======================================");
 
-    console.log({
-      userTypeId: req.body?.userTypeId,
-      CompanyCode: req.body?.CompanyCode,
-      MemberNumber: req.body?.MemberNumber,
-      RegisteredMobileNumber:
-        req.body?.RegisteredMobileNumber,
-      userName: req.body?.userName,
-      passwordProvided:
-        hasValue(req.body?.password),
-    });
-
     // =================================================
-    // READ REQUEST
+    // REQUEST BODY
     // =================================================
 
     const {
@@ -160,6 +51,16 @@ router.post("/register", async (req, res) => {
       userName,
       password,
     } = req.body || {};
+
+    console.log("REQUEST DATA:");
+    console.log({
+      userTypeId,
+      CompanyCode,
+      MemberNumber,
+      RegisteredMobileNumber,
+      userName,
+      passwordProvided: hasValue(password),
+    });
 
     // =================================================
     // BASIC VALIDATION
@@ -201,10 +102,26 @@ router.post("/register", async (req, res) => {
     }
 
     // =================================================
-    // VALIDATE USER TYPE
+    // NORMALIZE VALUES
     // =================================================
 
     const parsedUserTypeCode = Number(userTypeId);
+
+    const companyCode = cleanString(CompanyCode);
+
+    const memberNumber = cleanString(MemberNumber);
+
+    const mobile = cleanString(
+      RegisteredMobileNumber
+    );
+
+    const cleanUserName = cleanString(userName);
+
+    const cleanPassword = String(password);
+
+    // =================================================
+    // VALIDATE USER TYPE
+    // =================================================
 
     if (!Number.isInteger(parsedUserTypeCode)) {
       return res.status(400).json({
@@ -217,10 +134,6 @@ router.post("/register", async (req, res) => {
     // VALIDATE MOBILE
     // =================================================
 
-    const mobile = String(
-      RegisteredMobileNumber
-    ).trim();
-
     if (!/^[6-9]\d{9}$/.test(mobile)) {
       return res.status(400).json({
         success: false,
@@ -230,24 +143,37 @@ router.post("/register", async (req, res) => {
     }
 
     // =================================================
-    // CLEAN VALUES
+    // VALIDATE USERNAME
     // =================================================
 
-    const companyCode = String(
-      CompanyCode
-    ).trim();
+    if (cleanUserName.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Username must contain at least 3 characters.",
+      });
+    }
 
-    const cleanMemberNumber = hasValue(MemberNumber)
-      ? String(MemberNumber).trim()
-      : "";
+    // =================================================
+    // VALIDATE PASSWORD
+    // =================================================
 
-    const cleanUserName = String(
-      userName
-    ).trim();
+    if (cleanPassword.length < 4) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password must contain at least 4 characters.",
+      });
+    }
 
-    const cleanPassword = String(
-      password
-    );
+    console.log("======================================");
+    console.log("NORMALIZED REGISTER DATA");
+    console.log("UserTypeCode:", parsedUserTypeCode);
+    console.log("CompanyCode:", companyCode);
+    console.log("MemberNumber:", memberNumber);
+    console.log("Mobile:", mobile);
+    console.log("UserName:", cleanUserName);
+    console.log("======================================");
 
     // =================================================
     // DATABASE
@@ -259,48 +185,46 @@ router.post("/register", async (req, res) => {
     // GET USER TYPE
     // =================================================
 
+    console.log("======================================");
+    console.log("GETTING USER TYPE");
+    console.log("======================================");
+
     const userTypeRequest = pool.request();
 
     userTypeRequest.input(
       "UserTypeCode",
+      sql.Int,
       parsedUserTypeCode
     );
 
     const userTypeResult =
       await userTypeRequest.query(`
-        SELECT
+        SELECT TOP 1
           UserTypeCode,
           UserTypeName
         FROM tbl_UserType
         WHERE UserTypeCode = @UserTypeCode
       `);
 
-    if (userTypeResult.recordset.length === 0) {
+    if (
+      !userTypeResult.recordset ||
+      userTypeResult.recordset.length === 0
+    ) {
       return res.status(400).json({
         success: false,
-        message: "User type does not exist.",
+        message:
+          "User type does not exist.",
       });
     }
 
     const userTypeRow =
       userTypeResult.recordset[0];
 
-    const userTypeName =
-      String(
-        userTypeRow.UserTypeName || ""
-      )
-        .trim()
-        .toLowerCase();
-
-    console.log("USER TYPE:", userTypeName);
-    console.log(
-      "USER TYPE CODE:",
-      parsedUserTypeCode
-    );
-
-    // =================================================
-    // DETERMINE MEMBER / SECRETARY
-    // =================================================
+    const userTypeName = String(
+      userTypeRow.UserTypeName || ""
+    )
+      .trim()
+      .toLowerCase();
 
     const isMember =
       userTypeName === "member";
@@ -309,20 +233,23 @@ router.post("/register", async (req, res) => {
       userTypeName === "secretary" ||
       userTypeName === "secretory";
 
+    console.log("USER TYPE CODE:", parsedUserTypeCode);
+    console.log("USER TYPE NAME:", userTypeName);
     console.log("IS MEMBER:", isMember);
     console.log("IS SECRETARY:", isSecretary);
 
     // =================================================
-    // ONLY MEMBER REQUIRES MEMBER NUMBER
+    // MEMBER NUMBER REQUIRED FOR MEMBER
     // =================================================
 
     if (
       isMember &&
-      !hasValue(cleanMemberNumber)
+      !hasValue(memberNumber)
     ) {
       return res.status(400).json({
         success: false,
-        message: "Member Number is required.",
+        message:
+          "Member Number is required.",
       });
     }
 
@@ -330,10 +257,24 @@ router.post("/register", async (req, res) => {
     // CHECK COMPANY
     // =================================================
 
+    console.log("======================================");
+    console.log("CHECKING COMPANY");
+    console.log("CompanyCode:", companyCode);
+    console.log("======================================");
+
     const companyRequest = pool.request();
+
+    /*
+     * IMPORTANT:
+     * CompanyCode is sent as VARCHAR/NVARCHAR.
+     *
+     * This avoids problems if CompanyCode is stored
+     * as VARCHAR in SQL Server.
+     */
 
     companyRequest.input(
       "CompanyCode",
+      sql.VarChar(50),
       companyCode
     );
 
@@ -349,10 +290,19 @@ router.post("/register", async (req, res) => {
         WHERE CompanyCode = @CompanyCode
       `);
 
-    if (companyResult.recordset.length === 0) {
+    console.log(
+      "COMPANY MATCH COUNT:",
+      companyResult.recordset.length
+    );
+
+    if (
+      !companyResult.recordset ||
+      companyResult.recordset.length === 0
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Selected society does not exist.",
+        message:
+          "Selected society does not exist.",
       });
     }
 
@@ -366,16 +316,10 @@ router.post("/register", async (req, res) => {
 
     console.log("COMPANY CODE:", company.CompanyCode);
     console.log("COMPANY NAME:", companyName);
+    console.log("COMPANY MOBILE:", company.MobileNo);
 
     // =================================================
     // MEMBER VALIDATION
-    //
-    // Member must exist in tbl_Member:
-    //
-    // CompanyCode
-    // MemberNumber
-    // MobileNo
-    //
     // =================================================
 
     if (isMember) {
@@ -388,16 +332,19 @@ router.post("/register", async (req, res) => {
 
       memberRequest.input(
         "CompanyCode",
+        sql.VarChar(50),
         companyCode
       );
 
       memberRequest.input(
         "MemberNumber",
-        cleanMemberNumber
+        sql.VarChar(50),
+        memberNumber
       );
 
       memberRequest.input(
         "MobileNo",
+        sql.VarChar(20),
         mobile
       );
 
@@ -420,6 +367,7 @@ router.post("/register", async (req, res) => {
       );
 
       if (
+        !memberResult.recordset ||
         memberResult.recordset.length === 0
       ) {
         return res.status(400).json({
@@ -428,13 +376,14 @@ router.post("/register", async (req, res) => {
             "Member details do not match the registered society records.",
         });
       }
+
+      console.log(
+        "MEMBER VALIDATION SUCCESS"
+      );
     }
 
     // =================================================
     // SECRETARY VALIDATION
-    //
-    // Secretary mobile must match company mobile.
-    //
     // =================================================
 
     if (isSecretary) {
@@ -443,9 +392,17 @@ router.post("/register", async (req, res) => {
       console.log("======================================");
 
       const companyMobile =
-        String(
-          company.MobileNo || ""
-        ).trim();
+        cleanString(company.MobileNo);
+
+      console.log(
+        "COMPANY MOBILE:",
+        companyMobile
+      );
+
+      console.log(
+        "REQUEST MOBILE:",
+        mobile
+      );
 
       if (
         companyMobile !== mobile
@@ -456,28 +413,27 @@ router.post("/register", async (req, res) => {
             "Registered mobile number does not match the society records.",
         });
       }
-    }
 
-    // =================================================
-    // IF USER TYPE IS SOMETHING ELSE
-    // =================================================
-
-    if (!isMember && !isSecretary) {
       console.log(
-        "Other user type registration:",
-        userTypeName
+        "SECRETARY VALIDATION SUCCESS"
       );
     }
 
     // =================================================
-    // CHECK USERNAME ALREADY EXISTS
+    // CHECK USERNAME
     // =================================================
+
+    console.log("======================================");
+    console.log("CHECKING USERNAME");
+    console.log("USERNAME:", cleanUserName);
+    console.log("======================================");
 
     const usernameRequest =
       pool.request();
 
     usernameRequest.input(
       "UserName",
+      sql.VarChar(100),
       cleanUserName
     );
 
@@ -491,6 +447,7 @@ router.post("/register", async (req, res) => {
       `);
 
     if (
+      usernameResult.recordset &&
       usernameResult.recordset.length > 0
     ) {
       return res.status(409).json({
@@ -501,87 +458,32 @@ router.post("/register", async (req, res) => {
     }
 
     // =================================================
-    // CHECK SAME MEMBER ALREADY REGISTERED
+    // CHECK DUPLICATE MEMBER
     // =================================================
 
     if (isMember) {
-      const existingMemberRequest =
-        pool.request();
+      console.log("======================================");
+      console.log("CHECKING DUPLICATE MEMBER");
+      console.log("======================================");
 
-      existingMemberRequest.input(
-        "CompanyCode",
-        companyCode
-      );
-
-      existingMemberRequest.input(
-        "MemberNumber",
-        cleanMemberNumber
-      );
-
-      const existingMemberResult =
-        await existingMemberRequest.query(`
-          SELECT TOP 1
-            UserCode,
-            UserName
-          FROM tbl_User
-          WHERE
-            CompanyCode = @CompanyCode
-            AND MemberNumber = @MemberNumber
-            AND UserTypeCode = @UserTypeCode
-        `);
-
-      // The above query needs UserTypeCode parameter.
-      // We intentionally don't use this result.
-    }
-
-    // =================================================
-    // GET NEXT USER CODE
-    // =================================================
-
-    const codeResult =
-      await pool.request().query(`
-        SELECT
-          ISNULL(MAX(UserCode), 0) + 1 AS NextUserCode
-        FROM tbl_User
-      `);
-
-    const nextUserCode =
-      Number(
-        codeResult.recordset[0]
-          .NextUserCode
-      );
-
-    if (
-      !Number.isInteger(nextUserCode) ||
-      nextUserCode <= 0
-    ) {
-      return res.status(500).json({
-        success: false,
-        message:
-          "Unable to generate UserCode.",
-      });
-    }
-
-    // =================================================
-    // CHECK DUPLICATE MEMBER REGISTRATION
-    // =================================================
-
-    if (isMember) {
       const duplicateMemberRequest =
         pool.request();
 
       duplicateMemberRequest.input(
         "CompanyCode",
+        sql.VarChar(50),
         companyCode
       );
 
       duplicateMemberRequest.input(
         "MemberNumber",
-        cleanMemberNumber
+        sql.VarChar(50),
+        memberNumber
       );
 
       duplicateMemberRequest.input(
         "UserTypeCode",
+        sql.Int,
         parsedUserTypeCode
       );
 
@@ -589,7 +491,10 @@ router.post("/register", async (req, res) => {
         await duplicateMemberRequest.query(`
           SELECT TOP 1
             UserCode,
-            UserName
+            UserName,
+            CompanyCode,
+            MemberNumber,
+            UserTypeCode
           FROM tbl_User
           WHERE
             CompanyCode = @CompanyCode
@@ -597,15 +502,89 @@ router.post("/register", async (req, res) => {
             AND UserTypeCode = @UserTypeCode
         `);
 
+      console.log(
+        "DUPLICATE MEMBER COUNT:",
+        duplicateMemberResult.recordset.length
+      );
+
       if (
+        duplicateMemberResult.recordset &&
         duplicateMemberResult.recordset.length > 0
       ) {
+        const existing =
+          duplicateMemberResult.recordset[0];
+
+        console.log(
+          "EXISTING USER:",
+          existing
+        );
+
         return res.status(409).json({
           success: false,
           message:
             "This member is already registered.",
+          existingUser: {
+            userCode:
+              existing.UserCode,
+            userName:
+              existing.UserName,
+          },
         });
       }
+    }
+
+    // =================================================
+    // START TRANSACTION
+    // =================================================
+
+    transaction =
+      new sql.Transaction(pool);
+
+    await transaction.begin();
+
+    console.log("======================================");
+    console.log("TRANSACTION STARTED");
+    console.log("======================================");
+
+    // =================================================
+    // GET NEXT USER CODE
+    // =================================================
+
+    /*
+     * UPDLOCK + HOLDLOCK prevents two simultaneous
+     * registrations from selecting the same UserCode
+     * as far as the transaction isolation allows.
+     */
+
+    const codeRequest =
+      new sql.Request(transaction);
+
+    const codeResult =
+      await codeRequest.query(`
+        SELECT
+          ISNULL(MAX(UserCode), 0) + 1
+            AS NextUserCode
+        FROM tbl_User WITH (UPDLOCK, HOLDLOCK)
+      `);
+
+    const nextUserCode =
+      Number(
+        codeResult.recordset[0]
+          ?.NextUserCode
+      );
+
+    console.log(
+      "NEXT USER CODE:",
+      nextUserCode
+    );
+
+    if (
+      !Number.isInteger(nextUserCode) ||
+      nextUserCode <= 0
+    ) {
+      throw new Error(
+        "Unable to generate UserCode."
+      );
     }
 
     // =================================================
@@ -614,80 +593,99 @@ router.post("/register", async (req, res) => {
 
     console.log("======================================");
     console.log("INSERTING USER");
-    console.log("UserCode:", nextUserCode);
-    console.log("UserTypeCode:", parsedUserTypeCode);
-    console.log("CompanyCode:", companyCode);
-    console.log(
-      "MemberNumber:",
-      isMember
-        ? cleanMemberNumber
-        : ""
-    );
-    console.log("UserName:", cleanUserName);
     console.log("======================================");
 
     const insertRequest =
-      pool.request();
+      new sql.Request(transaction);
 
     insertRequest.input(
       "UserCode",
+      sql.Int,
       nextUserCode
     );
 
     insertRequest.input(
       "UserTypeCode",
+      sql.Int,
       parsedUserTypeCode
     );
 
     insertRequest.input(
       "UserName",
+      sql.VarChar(100),
       cleanUserName
     );
 
     insertRequest.input(
       "Password",
+      sql.VarChar(255),
       cleanPassword
     );
 
     insertRequest.input(
       "CompanyCode",
+      sql.VarChar(50),
       companyCode
     );
 
     insertRequest.input(
       "MemberNumber",
+      sql.VarChar(50),
       isMember
-        ? cleanMemberNumber
+        ? memberNumber
         : ""
     );
 
     insertRequest.input(
       "RegisteredMobileNumber",
+      sql.VarChar(20),
       mobile
     );
 
-    await insertRequest.query(`
-      INSERT INTO tbl_User
-      (
-        UserCode,
-        UserTypeCode,
-        UserName,
-        Password,
-        CompanyCode,
-        MemberNumber,
-        RegisteredMobileNumber
-      )
-      VALUES
-      (
-        @UserCode,
-        @UserTypeCode,
-        @UserName,
-        @Password,
-        @CompanyCode,
-        @MemberNumber,
-        @RegisteredMobileNumber
-      )
-    `);
+    const insertResult =
+      await insertRequest.query(`
+        INSERT INTO tbl_User
+        (
+          UserCode,
+          UserTypeCode,
+          UserName,
+          Password,
+          C_Date,
+          E_Date,
+          RegisteredMobileNumber,
+          MemberNumber,
+          CompanyCode
+        )
+        VALUES
+        (
+          @UserCode,
+          @UserTypeCode,
+          @UserName,
+          @Password,
+          GETDATE(),
+          NULL,
+          @RegisteredMobileNumber,
+          @MemberNumber,
+          @CompanyCode
+        )
+      `);
+
+    console.log(
+      "INSERTED ROWS:",
+      insertResult.rowsAffected
+    );
+
+    // =================================================
+    // COMMIT
+    // =================================================
+
+    await transaction.commit();
+
+    transaction = null;
+
+    console.log("======================================");
+    console.log("TRANSACTION COMMITTED");
+    console.log("======================================");
 
     // =================================================
     // SUCCESS
@@ -695,263 +693,165 @@ router.post("/register", async (req, res) => {
 
     console.log("======================================");
     console.log("REGISTRATION SUCCESS");
-    console.log("UserCode:", nextUserCode);
-    console.log("UserName:", cleanUserName);
-    console.log("CompanyCode:", companyCode);
-    console.log("CompanyName:", companyName);
     console.log("======================================");
+
+    console.log({
+      UserCode: nextUserCode,
+      UserTypeCode: parsedUserTypeCode,
+      UserTypeName:
+        userTypeRow.UserTypeName,
+      UserName: cleanUserName,
+      CompanyCode: companyCode,
+      CompanyName: companyName,
+      MemberNumber:
+        isMember
+          ? memberNumber
+          : "",
+      RegisteredMobileNumber: mobile,
+    });
 
     return res.status(201).json({
       success: true,
-      message: "User created successfully.",
+      message:
+        "User created successfully.",
 
       user: {
-        userCode: nextUserCode,
-        userTypeCode: parsedUserTypeCode,
-        userTypeName: userTypeRow.UserTypeName,
-        userName: cleanUserName,
-        companyCode: companyCode,
-        companyName: companyName,
+        userCode:
+          nextUserCode,
+
+        userTypeCode:
+          parsedUserTypeCode,
+
+        userTypeName:
+          userTypeRow.UserTypeName,
+
+        userName:
+          cleanUserName,
+
+        companyCode:
+          companyCode,
+
+        companyName:
+          companyName,
+
         memberNumber:
           isMember
-            ? cleanMemberNumber
+            ? memberNumber
             : "",
-        registeredMobileNumber: mobile,
+
+        registeredMobileNumber:
+          mobile,
       },
     });
 
   } catch (error) {
+
+    // =================================================
+    // ROLLBACK
+    // =================================================
+
+    if (transaction) {
+      try {
+        await transaction.rollback();
+
+        console.log(
+          "TRANSACTION ROLLED BACK"
+        );
+      } catch (rollbackError) {
+        console.error(
+          "ROLLBACK ERROR:",
+          rollbackError.message
+        );
+      }
+    }
+
+    // =================================================
+    // DETAILED ERROR
+    // =================================================
+
     console.error("======================================");
     console.error("POST /api/register ERROR");
     console.error("======================================");
-    console.error(error);
+
+    console.error(
+      "MESSAGE:",
+      error?.message
+    );
+
+    console.error(
+      "NAME:",
+      error?.name
+    );
+
+    console.error(
+      "NUMBER:",
+      error?.number
+    );
+
+    console.error(
+      "CODE:",
+      error?.code
+    );
+
+    console.error(
+      "STATE:",
+      error?.state
+    );
+
+    console.error(
+      "CLASS:",
+      error?.class
+    );
+
+    console.error(
+      "LINE:",
+      error?.lineNumber
+    );
+
+    console.error(
+      "PROC:",
+      error?.procName
+    );
+
+    console.error(
+      "STACK:",
+      error?.stack
+    );
+
     console.error("======================================");
 
-    return res.status(500).json({
-      success: false,
-      message: "Registration failed.",
-      error: error.message,
-    });
-  }
-});
-
-// =====================================================
-// LOGIN
-// POST /api/login
-// =====================================================
-
-router.post("/login", async (req, res) => {
-  try {
-    console.log("======================================");
-    console.log("POST /api/login");
-    console.log("LOGIN REQUEST:", {
-      userTypeId: req.body?.userTypeId,
-      userName: req.body?.userName,
-      passwordProvided:
-        req.body?.password !== undefined &&
-        req.body?.password !== null &&
-        String(req.body.password).length > 0,
-    });
-    console.log("======================================");
-
-    const {
-      userTypeId,
-      userName,
-      password,
-    } = req.body;
-
     // =================================================
-    // VALIDATION
-    // =================================================
-
-    if (!hasValue(userTypeId)) {
-      return res.status(400).json({
-        success: false,
-        message: "User type is required",
-      });
-    }
-
-    if (!hasValue(userName)) {
-      return res.status(400).json({
-        success: false,
-        message: "Username is required",
-      });
-    }
-
-    if (!hasValue(password)) {
-      return res.status(400).json({
-        success: false,
-        message: "Password is required",
-      });
-    }
-
-    const parsedUserTypeCode =
-      Number(userTypeId);
-
-    if (
-      !Number.isInteger(
-        parsedUserTypeCode
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user type",
-      });
-    }
-
-    // =================================================
-    // DATABASE
-    // =================================================
-
-    const pool = await getPool();
-
-    const request =
-      pool.request();
-
-    request.input(
-      "UserName",
-      String(userName).trim()
-    );
-
-    request.input(
-      "Password",
-      String(password)
-    );
-
-    request.input(
-      "UserTypeCode",
-      parsedUserTypeCode
-    );
-
-    // =================================================
-    // LOGIN QUERY
-    // =================================================
-
-    const result =
-      await request.query(`
-        SELECT
-          U.UserCode,
-          U.UserTypeCode,
-          U.UserName,
-          U.RegisteredMobileNumber,
-          U.MemberNumber,
-          U.CompanyCode,
-
-          UT.UserTypeName,
-
-          C.Header1,
-          C.Header2,
-          C.MobileNo
-
-        FROM tbl_User AS U
-
-        LEFT JOIN tbl_UserType AS UT
-          ON U.UserTypeCode =
-             UT.UserTypeCode
-
-        LEFT JOIN tbl_Company AS C
-          ON U.CompanyCode =
-             C.CompanyCode
-
-        WHERE
-          U.UserName = @UserName
-          AND U.Password = @Password
-          AND U.UserTypeCode =
-              @UserTypeCode
-      `);
-
-    // =================================================
-    // LOGIN FAILED
+    // SQL DUPLICATE KEY
     // =================================================
 
     if (
-      result.recordset.length === 0
+      error?.number === 2627 ||
+      error?.number === 2601
     ) {
-      console.log("LOGIN FAILED");
-
-      return res.status(401).json({
+      return res.status(409).json({
         success: false,
         message:
-          "Invalid username, password, or user type",
+          "Registration already exists.",
+        error:
+          error.message,
       });
     }
 
     // =================================================
-    // USER
+    // RESPONSE
     // =================================================
-
-    const row =
-      result.recordset[0];
-
-    const companyName =
-      `${row.Header1 || ""} ${
-        row.Header2 || ""
-      }`.trim();
-
-    const user = {
-      userCode:
-        row.UserCode,
-
-      userName:
-        row.UserName,
-
-      userTypeCode:
-        row.UserTypeCode,
-
-      userTypeName:
-        row.UserTypeName || "",
-
-      companyCode:
-        row.CompanyCode,
-
-      companyName:
-        companyName,
-
-      memberNumber:
-        row.MemberNumber || "",
-
-      registeredMobileNumber:
-        row.RegisteredMobileNumber || "",
-    };
-
-    // =================================================
-    // SUCCESS
-    // =================================================
-
-    console.log("======================================");
-    console.log("LOGIN SUCCESS");
-    console.log("UserCode:", user.userCode);
-    console.log("UserName:", user.userName);
-    console.log(
-      "UserType:",
-      user.userTypeName
-    );
-    console.log(
-      "CompanyCode:",
-      user.companyCode
-    );
-    console.log(
-      "MemberNumber:",
-      user.memberNumber
-    );
-    console.log("======================================");
-
-    return res.status(200).json({
-      success: true,
-      message: "Login successful",
-      user,
-    });
-
-  } catch (error) {
-    console.error("======================================");
-    console.error("POST /api/login ERROR");
-    console.error(error);
-    console.error("======================================");
 
     return res.status(500).json({
       success: false,
-      message: "Login failed",
-      error: error.message,
+      message:
+        "Registration failed.",
+      error:
+        error?.message ||
+        "Unknown database error.",
+      code:
+        error?.code || null,
+      number:
+        error?.number || null,
     });
   }
 });
