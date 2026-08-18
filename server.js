@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
-const { getPool } = require("./db");
+const sql = require("mssql");
 
+const { getPool } = require("./db");
 const registerRouter = require("./routes/register");
 
 const app = express();
@@ -41,9 +42,15 @@ const getCompanyName = (company) => {
 
 // =====================================================
 // HEALTH CHECK
+// GET /
 // =====================================================
 
 app.get("/", (req, res) => {
+  console.log("======================================");
+  console.log("GET /");
+  console.log("BACKEND HEALTH CHECK");
+  console.log("======================================");
+
   return res.status(200).json({
     success: true,
     message: "Backend API is running",
@@ -72,12 +79,28 @@ app.get("/api/usertypes", async (req, res) => {
       ORDER BY UserTypeCode
     `);
 
-    console.log("USER TYPES:", result.recordset);
+    console.log(
+      "USER TYPES:",
+      result.recordset
+    );
 
-    return res.status(200).json(result.recordset);
+    return res.status(200).json(
+      result.recordset
+    );
   } catch (error) {
-    console.error("GET /api/usertypes ERROR");
+    console.error(
+      "======================================"
+    );
+
+    console.error(
+      "GET /api/usertypes ERROR"
+    );
+
     console.error(error);
+
+    console.error(
+      "======================================"
+    );
 
     return res.status(500).json({
       success: false,
@@ -114,27 +137,42 @@ app.get("/api/Company", async (req, res) => {
       ORDER BY CompanyCode
     `);
 
-    const companies = result.recordset.map((row) => ({
-      CompanyCode: row.CompanyCode,
-      EDNO: row.EDNO,
+    const companies =
+      result.recordset.map((row) => ({
+        CompanyCode: row.CompanyCode,
 
-      CompanyName:
-        `${row.Header1 || ""} ${
-          row.Header2 || ""
-        }`.trim(),
+        EDNO: row.EDNO,
 
-      MobileNo: row.MobileNo,
-    }));
+        CompanyName:
+          `${row.Header1 || ""} ${
+            row.Header2 || ""
+          }`.trim(),
+
+        MobileNo: row.MobileNo,
+      }));
 
     console.log(
       "COMPANIES COUNT:",
       companies.length
     );
 
-    return res.status(200).json(companies);
+    return res.status(200).json(
+      companies
+    );
   } catch (error) {
-    console.error("GET /api/Company ERROR");
+    console.error(
+      "======================================"
+    );
+
+    console.error(
+      "GET /api/Company ERROR"
+    );
+
     console.error(error);
+
+    console.error(
+      "======================================"
+    );
 
     return res.status(500).json({
       success: false,
@@ -147,14 +185,24 @@ app.get("/api/Company", async (req, res) => {
 // =====================================================
 // REGISTER ROUTE
 //
+// FRONTEND:
 // POST /api/register
 //
+// routes/register.js:
+// router.post("/", ...)
+//
 // IMPORTANT:
-// Registration code is inside:
-// routes/register.js
+// DO NOT USE app.use("/api", registerRouter)
+// because frontend calls /api/register.
+//
+// CORRECT:
+// app.use("/api/register", registerRouter)
 // =====================================================
 
-app.use("/api", registerRouter);
+app.use(
+  "/api/register",
+  registerRouter
+);
 
 // =====================================================
 // LOGIN
@@ -170,50 +218,50 @@ app.post("/api/login", async (req, res) => {
 
     const {
       userTypeId,
+      UserTypeCode,
       userName,
+      UserName,
       password,
+      Password,
     } = req.body || {};
 
+    // =================================================
+    // NORMALIZE
+    // =================================================
+
+    const finalUserTypeCode = Number(
+      userTypeId ?? UserTypeCode
+    );
+
+    const finalUserName =
+      userName ??
+      UserName ??
+      "";
+
+    const finalPassword =
+      password ??
+      Password ??
+      "";
+
     console.log({
-      userTypeId,
-      userName,
-      passwordProvided: hasValue(password),
+      userTypeId:
+        finalUserTypeCode,
+
+      userName:
+        finalUserName,
+
+      passwordProvided:
+        hasValue(finalPassword),
     });
 
     // =================================================
     // VALIDATION
     // =================================================
 
-    if (!hasValue(userTypeId)) {
-      return res.status(400).json({
-        success: false,
-        message: "User type is required",
-      });
-    }
-
-    if (!hasValue(userName)) {
-      return res.status(400).json({
-        success: false,
-        message: "Username is required",
-      });
-    }
-
-    if (!hasValue(password)) {
-      return res.status(400).json({
-        success: false,
-        message: "Password is required",
-      });
-    }
-
-    // =================================================
-    // USER TYPE
-    // =================================================
-
-    const parsedUserTypeCode =
-      Number(userTypeId);
-
     if (
-      !Number.isInteger(parsedUserTypeCode)
+      !Number.isInteger(
+        finalUserTypeCode
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -221,69 +269,97 @@ app.post("/api/login", async (req, res) => {
       });
     }
 
+    if (
+      !hasValue(finalUserName)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Username is required",
+      });
+    }
+
+    if (
+      !hasValue(finalPassword)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is required",
+      });
+    }
+
     // =================================================
     // DATABASE
     // =================================================
 
-    const pool = await getPool();
+    const pool =
+      await getPool();
 
-    const request = pool.request();
+    const request =
+      pool.request();
 
     request.input(
       "UserName",
-      require("mssql").VarChar(100),
-      String(userName).trim()
+      sql.VarChar(50),
+      String(
+        finalUserName
+      ).trim()
     );
 
     request.input(
       "Password",
-      require("mssql").VarChar(255),
-      String(password)
+      sql.NVarChar(50),
+      String(
+        finalPassword
+      )
     );
 
     request.input(
       "UserTypeCode",
-      require("mssql").Int,
-      parsedUserTypeCode
+      sql.Int,
+      finalUserTypeCode
     );
 
     // =================================================
     // LOGIN QUERY
     // =================================================
 
-    const result = await request.query(`
-      SELECT TOP 1
+    const result =
+      await request.query(`
+        SELECT TOP 1
 
-        U.UserCode,
-        U.UserTypeCode,
-        U.UserName,
-        U.RegisteredMobileNumber,
-        U.MemberNumber,
-        U.CompanyCode,
+          U.UserCode,
+          U.UserTypeCode,
+          U.UserName,
+          U.RegisteredMobileNumber,
+          U.MemberNumber,
+          U.CompanyCode,
 
-        UT.UserTypeName,
+          UT.UserTypeName,
 
-        C.EDNO,
-        C.Header1,
-        C.Header2,
-        C.MobileNo
+          C.EDNO,
+          C.Header1,
+          C.Header2,
+          C.MobileNo
 
-      FROM tbl_User AS U
+        FROM tbl_User AS U
 
-      LEFT JOIN tbl_UserType AS UT
-        ON U.UserTypeCode =
-           UT.UserTypeCode
+        LEFT JOIN tbl_UserType AS UT
+          ON U.UserTypeCode =
+             UT.UserTypeCode
 
-      LEFT JOIN tbl_Company AS C
-        ON U.CompanyCode =
-           C.CompanyCode
+        LEFT JOIN tbl_Company AS C
+          ON U.CompanyCode =
+             C.CompanyCode
 
-      WHERE
-        U.UserName = @UserName
-        AND U.Password = @Password
-        AND U.UserTypeCode =
-            @UserTypeCode
-    `);
+        WHERE
+          U.UserName = @UserName
+
+          AND U.Password =
+              @Password
+
+          AND U.UserTypeCode =
+              @UserTypeCode
+      `);
 
     // =================================================
     // LOGIN FAILED
@@ -293,7 +369,9 @@ app.post("/api/login", async (req, res) => {
       !result.recordset ||
       result.recordset.length === 0
     ) {
-      console.log("LOGIN FAILED");
+      console.log(
+        "LOGIN FAILED"
+      );
 
       return res.status(401).json({
         success: false,
@@ -306,7 +384,8 @@ app.post("/api/login", async (req, res) => {
     // LOGIN USER
     // =================================================
 
-    const row = result.recordset[0];
+    const row =
+      result.recordset[0];
 
     const companyName =
       getCompanyName(row);
@@ -322,7 +401,8 @@ app.post("/api/login", async (req, res) => {
         row.UserTypeCode,
 
       userTypeName:
-        row.UserTypeName || "",
+        row.UserTypeName ||
+        "",
 
       companyCode:
         row.CompanyCode,
@@ -334,24 +414,39 @@ app.post("/api/login", async (req, res) => {
         row.EDNO,
 
       memberNumber:
-        row.MemberNumber || "",
+        row.MemberNumber ||
+        "",
 
       registeredMobileNumber:
-        row.RegisteredMobileNumber || "",
+        row.RegisteredMobileNumber ||
+        "",
 
       companyMobileNo:
-        row.MobileNo || "",
+        row.MobileNo ||
+        "",
     };
 
     // =================================================
-    // LOG
+    // LOGIN LOG
     // =================================================
 
-    console.log("======================================");
-    console.log("LOGIN SUCCESS");
-    console.log("======================================");
+    console.log(
+      "======================================"
+    );
 
-    console.log("UserCode:", user.userCode);
+    console.log(
+      "LOGIN SUCCESS"
+    );
+
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      "UserCode:",
+      user.userCode
+    );
+
     console.log(
       "UserName:",
       user.userName
@@ -382,7 +477,13 @@ app.post("/api/login", async (req, res) => {
       user.memberNumber
     );
 
-    console.log("======================================");
+    console.log(
+      "======================================"
+    );
+
+    // =================================================
+    // RESPONSE
+    // =================================================
 
     return res.status(200).json({
       success: true,
@@ -390,25 +491,63 @@ app.post("/api/login", async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error("======================================");
-    console.error("POST /api/login ERROR");
-    console.error("======================================");
+    console.error(
+      "======================================"
+    );
+
+    console.error(
+      "POST /api/login ERROR"
+    );
+
+    console.error(
+      "======================================"
+    );
 
     console.error(error);
+
+    console.error(
+      "======================================"
+    );
 
     return res.status(500).json({
       success: false,
       message: "Login failed",
-      error: error.message,
+      error:
+        error?.message ||
+        "Unknown database error",
     });
   }
 });
 
 // =====================================================
-// 404
+// 404 HANDLER
+//
+// MUST BE AFTER ALL API ROUTES
 // =====================================================
 
 app.use((req, res) => {
+  console.log(
+    "======================================"
+  );
+
+  console.log(
+    "404 ROUTE NOT FOUND"
+  );
+
+  console.log(
+    "METHOD:",
+    req.method
+  );
+
+  console.log(
+    "URL:",
+    req.originalUrl
+  );
+
+  console.log(
+    "======================================"
+  );
+
   return res.status(404).json({
     success: false,
     message: "API route not found",
@@ -417,36 +556,81 @@ app.use((req, res) => {
 });
 
 // =====================================================
-// GLOBAL ERROR
+// GLOBAL ERROR HANDLER
 // =====================================================
 
-app.use((err, req, res, next) => {
-  console.error(
-    "GLOBAL SERVER ERROR:",
-    err
-  );
+app.use(
+  (err, req, res, next) => {
+    console.error(
+      "======================================"
+    );
 
-  return res.status(500).json({
-    success: false,
-    message: "Internal server error",
-    error: err.message,
-  });
-});
+    console.error(
+      "GLOBAL SERVER ERROR"
+    );
+
+    console.error(
+      "======================================"
+    );
+
+    console.error(err);
+
+    console.error(
+      "======================================"
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Internal server error",
+
+      error:
+        err?.message ||
+        "Unknown server error",
+    });
+  }
+);
 
 // =====================================================
 // START SERVER
 // =====================================================
 
-app.listen(PORT, () => {
-  console.log("======================================");
-  console.log(
-    `Server running on port ${PORT}`
-  );
-  console.log(
-    `http://localhost:${PORT}`
-  );
-  console.log("======================================");
-});
+app.listen(
+  PORT,
+  () => {
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      `Server running on port ${PORT}`
+    );
+
+    console.log(
+      `http://localhost:${PORT}`
+    );
+
+    console.log(
+      "REGISTER API:"
+    );
+
+    console.log(
+      `POST http://localhost:${PORT}/api/register`
+    );
+
+    console.log(
+      "LOGIN API:"
+    );
+
+    console.log(
+      `POST http://localhost:${PORT}/api/login`
+    );
+
+    console.log(
+      "======================================"
+    );
+  }
+);
 
 // =====================================================
 // EXPORT

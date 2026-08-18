@@ -4,6 +4,10 @@ const router = express.Router();
 const sql = require("mssql");
 const { getPool } = require("../db");
 
+router.post("/", async (req, res) => {
+  // Your complete registration code here
+});
+
 // =====================================================
 // REGISTER USER
 // POST /api/register
