@@ -1,6 +1,7 @@
 const express = require("express");
+const app = express();
 const router = express.Router();
-const { getPool } = require("../db");
+const { getPool } = require("./db");
 
 // =====================================================
 // HELPER
@@ -953,6 +954,11 @@ router.post("/login", async (req, res) => {
       error: error.message,
     });
   }
+});
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 // =====================================================
